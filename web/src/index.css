@@ -1086,6 +1086,39 @@ path.sent {
   border-top: 1px solid var(--line);
 }
 
+.rows li.group {
+  display: block;
+}
+
+.group-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.group-toggle {
+  border: 0;
+  background: none;
+  padding: 0;
+  font-weight: inherit;
+  cursor: pointer;
+}
+
+.group-toggle:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.chevron {
+  display: inline-block;
+  width: 1.1em;
+  color: var(--text-3);
+}
+
+.group-members {
+  margin: 8px 0 -11px 1.1em;
+}
+
 .row-main {
   display: grid;
   gap: 1px;
@@ -1217,6 +1250,11 @@ footer {
   }
 
   .rows li {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .group-head {
     flex-direction: column;
     gap: 4px;
   }
