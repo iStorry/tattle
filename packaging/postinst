@@ -1,0 +1,43 @@
+#!/bin/sh
+set -e
+
+# $1 is "configure"; $2 is the version last configured, or empty on a first
+# install. It is also set when the package was removed and is being put
+# back, so prerm leaves a marker to tell that apart from an upgrade.
+REMOVED=/var/lib/tattle/.removed
+
+starting=no
+if [ "$1" = configure ]; then
+	if [ -z "$2" ] || [ -e "$REMOVED" ]; then
+		starting=yes
+	fi
+	rm -f "$REMOVED"
+fi
+
+# Without systemd (a container, say) there is no service to manage, so the
+# files are installed and that is all.
+if [ "$1" = configure ] && [ -d /run/systemd/system ]; then
+	systemctl daemon-reload
+	if [ "$starting" = yes ]; then
+		systemctl enable --now tattle.service || true
+	else
+		# An upgrade: restart it if it is running, and leave it alone if
+		# its owner has stopped or disabled it.
+		systemctl try-restart tattle.service || true
+	fi
+fi
+
+if [ "$starting" = yes ]; then
+	cat <<MESSAGE
+
+Tattle is installed and running.
+
+  1. Open https://$(hostname):8477 in a browser. It will warn about the
+     certificate the first time; the README explains why.
+  2. If you have not chosen a password yet, you will be asked for a setup
+     code, which is here:
+
+         journalctl -u tattle | grep "setup code" | tail -1
+
+MESSAGE
+fi

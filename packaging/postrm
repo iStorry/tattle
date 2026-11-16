@@ -1,0 +1,13 @@
+#!/bin/sh
+set -e
+
+if [ -d /run/systemd/system ]; then
+	systemctl daemon-reload || true
+fi
+
+# "apt remove" keeps the recorded history, the password and the
+# certificate, so reinstalling picks up where it left off. "apt purge"
+# deletes them.
+if [ "$1" = purge ]; then
+	rm -rf /var/lib/tattle
+fi

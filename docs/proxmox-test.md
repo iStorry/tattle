@@ -11,32 +11,25 @@ last section removes it completely.
 
 ## 1. Install
 
-On your computer, in the project folder:
+Until there is a release to download, build the package on your computer.
+`make deb` needs Debian or Ubuntu; on a Mac, use the container form:
 
 ```bash
 make linux data
 ```
 
 ```bash
-scp bin/tattle-linux-amd64 root@your-proxmox:/usr/local/bin/tattle
+docker run --rm -v "$PWD:/src" -w /src debian:12 packaging/build-deb.sh 0.1.0~test amd64
+```
+
+Copy it to the host and install it there:
+
+```bash
+scp "dist/tattle_0.1.0~test_amd64.deb" root@your-proxmox:/root/
 ```
 
 ```bash
-scp deploy/tattle.service root@your-proxmox:/etc/systemd/system/
-```
-
-```bash
-ssh root@your-proxmox mkdir -p /usr/share/tattle
-```
-
-```bash
-scp data/ip2asn.tsv.gz root@your-proxmox:/usr/share/tattle/
-```
-
-On the host:
-
-```bash
-systemctl daemon-reload && systemctl enable --now tattle
+apt install "/root/tattle_0.1.0~test_amd64.deb"
 ```
 
 ```bash
@@ -64,8 +57,9 @@ journalctl -u tattle | grep "setup code" | tail -1
       direction.
 
 If the service fails to start, run `tattle` directly in a terminal on the
-host instead and carry on. Send the service error; the hardening options in
-the service file are the likely cause and have never been tested.
+host instead and carry on, and send the service error. The package and its
+service have been tested under systemd on plain Debian, but not on Proxmox,
+where reading `/etc/pve` is the part most likely to differ.
 
 ## 2. Machines
 
@@ -224,16 +218,12 @@ looked wrong.
 
 ## Remove Tattle
 
-```bash
-systemctl disable --now tattle
-```
+This stops and removes it, and deletes the history, password and
+certificate:
 
 ```bash
-rm -r /etc/systemd/system/tattle.service /usr/local/bin/tattle /usr/share/tattle
+apt purge tattle
 ```
 
-To also delete the recorded history:
-
-```bash
-rm -r /var/lib/tattle
-```
+- [ ] **Last check.** Afterwards, `systemctl status tattle` says the unit
+      could not be found, and `/var/lib/tattle` is gone.

@@ -1,0 +1,64 @@
+name: Release
+
+# Pushing a tag such as v0.1.0 builds the packages and prepares a release.
+# The release is left as a draft, so a person reads it before it is public.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Lint and test
+        run: make lint test
+
+      - name: Fetch the address-owner table
+        run: make data
+
+      - name: Build the packages
+        run: make deb VERSION="$GITHUB_REF_NAME" DEB_VERSION="${GITHUB_REF_NAME#v}"
+
+      - name: Install, upgrade and remove the package
+        run: sudo packaging/test-deb.sh "dist/tattle_${GITHUB_REF_NAME#v}_amd64.deb"
+
+      - name: Checksums
+        run: cd dist && sha256sum *.deb > SHA256SUMS && cat SHA256SUMS
+
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "## Installing"
+            echo
+            echo "Download the package for your host (amd64 for almost every Proxmox machine) and install it:"
+            echo
+            echo '```bash'
+            echo "apt install ./tattle_${GITHUB_REF_NAME#v}_amd64.deb"
+            echo '```'
+            echo
+            echo "Check the download against \`SHA256SUMS\` with \`sha256sum -c SHA256SUMS --ignore-missing\`."
+            echo
+            echo "The address-owner table in these packages is iptoasn.com's public-domain list as published on $(date -u -r data/ip2asn.tsv.gz +%Y-%m-%d)."
+          } > notes.md
+          gh release create "$GITHUB_REF_NAME" dist/*.deb dist/SHA256SUMS \
+            --draft --title "Tattle ${GITHUB_REF_NAME#v}" --notes-file notes.md --generate-notes

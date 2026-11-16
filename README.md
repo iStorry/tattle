@@ -18,25 +18,37 @@ pretend home lab. Building needs Go and pnpm.
 
 ## Install on a Proxmox host
 
-Build the Linux binary on your computer, fetch the table of who owns which
-internet addresses, and copy them over:
+Download the `.deb` for your host from the
+[releases page](https://github.com/istorry/tattle/releases) (`amd64` for
+almost every Proxmox machine), copy it to the host, and install it there:
 
 ```bash
-make linux data
-scp bin/tattle-linux-amd64 root@your-proxmox:/usr/local/bin/tattle
-scp deploy/tattle.service root@your-proxmox:/etc/systemd/system/
-ssh root@your-proxmox mkdir -p /usr/share/tattle
-scp data/ip2asn.tsv.gz root@your-proxmox:/usr/share/tattle/
+apt install ./tattle_0.1.0_amd64.deb
 ```
 
-The table is optional. Without it, internet addresses that have no name
-show without an owner.
+That installs the program, starts it as a service, and prints what to do
+next. To check the download first, put `SHA256SUMS` from the same page
+beside it and run `sha256sum -c SHA256SUMS --ignore-missing`.
 
-Then on the host:
+- **Upgrade:** install a newer `.deb` the same way. History, settings and the
+  password are kept.
+- **Remove:** `apt remove tattle` stops and removes it but keeps the history,
+  so reinstalling carries on where it left off.
+- **Remove everything:** `apt purge tattle` also deletes the history, the
+  password and the certificate.
+
+### Building the package yourself
+
+On Debian or Ubuntu, with Go and pnpm installed:
 
 ```bash
-systemctl enable --now tattle
+make deb
 ```
+
+The packages are written to `dist/`. On another system, run
+`packaging/build-deb.sh` inside a Debian container after `make linux data`.
+
+### First visit
 
 Open `https://your-proxmox:8477`.
 

@@ -1,0 +1,15 @@
+#!/bin/sh
+set -e
+
+# Stop the service when the package is removed. On an upgrade it is left
+# running and restarted afterwards by the new version's postinst.
+if [ "$1" = remove ]; then
+	if [ -d /run/systemd/system ]; then
+		systemctl disable --now tattle.service || true
+	fi
+	# Tell a later reinstall that the service was stopped by removal, not
+	# by its owner, so that it starts again.
+	if [ -d /var/lib/tattle ]; then
+		touch /var/lib/tattle/.removed
+	fi
+fi

@@ -1,7 +1,11 @@
 VERSION ?= $(shell git describe --tags --always 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
-.PHONY: build web linux demo data test lint clean
+# A package version must start with a digit: v0.1.0 becomes 0.1.0, and an
+# untagged build sorts before any release.
+DEB_VERSION ?= $(shell git describe --tags --exact-match 2>/dev/null | sed 's/^v//' | grep . || echo 0.0.0~git$$(git rev-parse --short HEAD 2>/dev/null || echo dev))
+
+.PHONY: build web linux demo data deb test lint clean
 
 # Build for this computer.
 build: web
@@ -17,10 +21,18 @@ linux: web
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o bin/tattle-linux-arm64 ./cmd/tattle
 
 # Fetch the table of who owns which internet addresses (public domain, from
-# iptoasn.com). It is bundled with releases and is not kept in git.
+# iptoasn.com). It is bundled with releases and is not kept in git. The file
+# keeps the date it was published, which the Health page reports.
 data:
 	mkdir -p data
-	curl -fL --proto '=https' -o data/ip2asn.tsv.gz https://iptoasn.com/data/ip2asn-combined.tsv.gz
+	curl -fL -R --proto '=https' -o data/ip2asn.tsv.gz https://iptoasn.com/data/ip2asn-combined.tsv.gz
+
+# Build the .deb packages into dist/. Needs dpkg-deb, which is on Debian and
+# Ubuntu; elsewhere, run the build script inside a debian container.
+deb: linux
+	@test -f data/ip2asn.tsv.gz || $(MAKE) data
+	packaging/build-deb.sh $(DEB_VERSION) amd64
+	packaging/build-deb.sh $(DEB_VERSION) arm64
 
 # Try the dashboard with invented traffic.
 demo: build
@@ -37,4 +49,4 @@ lint: web
 	cd web && pnpm exec oxlint --deny-warnings
 
 clean:
-	rm -rf bin internal/ui/dist
+	rm -rf bin dist internal/ui/dist

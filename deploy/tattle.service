@@ -4,7 +4,7 @@ After=network-online.target pve-cluster.service
 Wants=network-online.target
 
 [Service]
-ExecStart=/usr/local/bin/tattle
+ExecStart=/usr/bin/tattle
 StateDirectory=tattle
 Restart=on-failure
 RestartSec=5

@@ -12,14 +12,14 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           package_json_file: web/package.json
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -30,3 +30,21 @@ jobs:
         run: make test
       - name: Build Linux binaries
         run: make linux
+
+      # The address-owner table changes slowly; fetch it at most once a week.
+      - name: Week number, for the cache
+        id: week
+        run: echo "week=$(date +%G-%V)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        with:
+          path: data
+          key: ip2asn-${{ steps.week.outputs.week }}
+      - name: Fetch the address-owner table
+        run: test -f data/ip2asn.tsv.gz || make data
+
+      - name: Build the package
+        run: packaging/build-deb.sh 0.0.0~ci amd64
+      # The runner is a real machine with systemd, so this installs the
+      # package, runs the service, upgrades, removes and purges it for real.
+      - name: Install, upgrade and remove the package
+        run: sudo packaging/test-deb.sh dist/tattle_0.0.0~ci_amd64.deb
