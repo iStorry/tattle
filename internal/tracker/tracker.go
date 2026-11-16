@@ -23,7 +23,8 @@ const (
 	// Limits on joining a ClientHello that spans several packets.
 	maxHelloBytes    = 16 << 10
 	maxHelloSegments = 12
-	maxHelloPending  = 4
+	maxHelloPending  = 4    // out-of-order TCP packets held back
+	maxQUICPending   = 48   // QUIC clients scatter the handshake on purpose
 	maxHellosAtOnce  = 4096 // across all connections, so a flood cannot use much memory
 )
 
@@ -50,13 +51,16 @@ type flow struct {
 
 type addrPair struct{ client, server netip.Addr }
 
-// helloBuf joins the first packets of a connection in order, so a server
-// name that falls in the second or third packet can still be read.
+// helloBuf joins the pieces of a TLS ClientHello in order, so a server
+// name that falls in the second or third packet can still be read. Pieces
+// are placed by TCP sequence number, or by handshake offset for QUIC.
 type helloBuf struct {
-	start   uint32 // sequence number of data[0]
-	data    []byte
-	pending []helloSeg // packets that arrived ahead of a gap
-	segs    int
+	start      uint32 // position of data[0]
+	data       []byte
+	pending    []helloSeg // pieces that arrived ahead of a gap
+	packets    int
+	maxPending int
+	parse      func([]byte) (string, decode.HelloResult)
 }
 
 type helloSeg struct {
@@ -64,12 +68,19 @@ type helloSeg struct {
 	data []byte
 }
 
-func newHello(seq uint32, first []byte) *helloBuf {
-	return &helloBuf{start: seq, data: append([]byte(nil), first...), segs: 1}
+// newTCPHello starts from the first data packet of a TCP connection.
+func newTCPHello(seq uint32, first []byte) *helloBuf {
+	return &helloBuf{start: seq, data: append([]byte(nil), first...), packets: 1,
+		maxPending: maxHelloPending, parse: decode.ParseClientHello}
 }
 
-// place adds a packet's bytes if they continue the data, and reports
-// whether they were at or before the end of it (so not waiting on a gap).
+// newQUICHello starts empty: QUIC pieces carry their own offsets from zero.
+func newQUICHello() *helloBuf {
+	return &helloBuf{maxPending: maxQUICPending, parse: decode.ParseHelloMessage}
+}
+
+// place adds a piece if it continues the data, and reports whether it was
+// at or before the end of it (so not waiting on a gap).
 func (h *helloBuf) place(seq uint32, data []byte) bool {
 	off := int(int32(seq - h.start)) // signed, so sequence wrap-around works
 	if off > len(h.data) {
@@ -78,19 +89,26 @@ func (h *helloBuf) place(seq uint32, data []byte) bool {
 	if end := off + len(data); off >= 0 && end > len(h.data) {
 		h.data = append(h.data, data[len(h.data)-off:]...)
 	}
-	return true // a retransmission adds nothing
+	return true // a repeat adds nothing
 }
 
-// add takes the connection's next client packet. done reports that no more
-// packets are wanted, either because the name was found or it never will be.
-func (h *helloBuf) add(seq uint32, data []byte, truncated bool) (name string, done bool) {
-	h.segs++
-	if !h.place(seq, data) {
-		if len(h.pending) >= maxHelloPending {
-			return "", true
-		}
-		h.pending = append(h.pending, helloSeg{seq, append([]byte(nil), data...)})
+// put takes one piece, holding it back if it is ahead of a gap. It reports
+// false when there is no room to hold it.
+func (h *helloBuf) put(seq uint32, data []byte) bool {
+	if h.place(seq, data) {
+		return true
 	}
+	if len(h.pending) >= h.maxPending {
+		return false
+	}
+	h.pending = append(h.pending, helloSeg{seq, append([]byte(nil), data...)})
+	return true
+}
+
+// check is called once per packet, after its pieces were put. done reports
+// that no more packets are wanted, either because the name was found or it
+// never will be.
+func (h *helloBuf) check(truncated bool) (name string, done bool) {
 	for placed := true; placed; {
 		placed = false
 		for i, s := range h.pending {
@@ -101,7 +119,7 @@ func (h *helloBuf) add(seq uint32, data []byte, truncated bool) (name string, do
 			}
 		}
 	}
-	name, res := decode.ParseClientHello(h.data)
+	name, res := h.parse(h.data)
 	switch {
 	case res == decode.HelloFound:
 		return name, true
@@ -109,7 +127,7 @@ func (h *helloBuf) add(seq uint32, data []byte, truncated bool) (name string, do
 		return "", true
 	}
 	// A cut-short frame leaves a hole that later packets cannot fill.
-	return "", truncated || len(h.data) > maxHelloBytes || h.segs >= maxHelloSegments
+	return "", truncated || len(h.data) > maxHelloBytes || h.packets >= maxHelloSegments
 }
 
 // Tracker is safe for concurrent use by several capture goroutines.
@@ -297,8 +315,12 @@ func (t *Tracker) Handle(p decode.Packet, wireLen int, now time.Time) {
 			name := ""
 			switch {
 			case f.hello != nil:
-				var done bool
-				if name, done = f.hello.add(p.Seq, p.Payload, p.Truncated); done {
+				f.hello.packets++
+				done := !f.hello.put(p.Seq, p.Payload)
+				if !done {
+					name, done = f.hello.check(p.Truncated)
+				}
+				if done {
 					t.dropHello(f)
 				}
 			case f.sniffed < sniffPackets:
@@ -307,7 +329,7 @@ func (t *Tracker) Handle(p decode.Packet, wireLen int, now time.Time) {
 				name, res = decode.ParseClientHello(p.Payload)
 				switch {
 				case res == decode.HelloIncomplete && !p.Truncated && t.hellos < maxHellosAtOnce:
-					f.hello = newHello(p.Seq, p.Payload)
+					f.hello = newTCPHello(p.Seq, p.Payload)
 					t.hellos++
 				case res == decode.HelloNone:
 					name = decode.ParseHTTPHost(p.Payload)
@@ -316,6 +338,39 @@ func (t *Tracker) Handle(p decode.Packet, wireLen int, now time.Time) {
 			if name != "" {
 				f.domain, f.named = name, true
 			}
+		}
+	}
+
+	// HTTP/3: the same ClientHello, inside the connection's first QUIC
+	// packets. Only the client's opening packets are tried.
+	if p.Proto == decode.ProtoUDP && fromClient && !f.named && !p.Truncated && f.sniffed < sniffPackets {
+		f.sniffed++
+		frags, ok := decode.QUICClientInitial(p.Payload)
+		if ok && f.hello == nil && t.hellos < maxHellosAtOnce {
+			f.hello = newQUICHello()
+			t.hellos++
+		}
+		if ok && f.hello != nil {
+			f.hello.packets++
+			done := false
+			for _, fr := range frags {
+				if !f.hello.put(uint32(fr.Offset), fr.Data) {
+					done = true
+				}
+			}
+			name := ""
+			if !done {
+				name, done = f.hello.check(false)
+			}
+			if name != "" {
+				f.domain, f.named = name, true
+			}
+			if done {
+				t.dropHello(f)
+			}
+		}
+		if f.sniffed == sniffPackets {
+			t.dropHello(f) // the name never came; stop holding the pieces
 		}
 	}
 }

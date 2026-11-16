@@ -67,16 +67,16 @@ many bytes moved in each direction. Totals are stored per minute in SQLite.
 - **Machine names** come from the VM and container config files in `/etc/pve`,
   matched to traffic by network card (MAC) address.
 - **Destination names** come from three places, in order of preference: the
-  server name in the HTTPS handshake, the `Host` header of plain HTTP, and DNS
-  answers seen on the bridge.
+  server name in the HTTPS or HTTP/3 handshake, the `Host` header of plain
+  HTTP, and DNS answers seen on the bridge.
 
 ## What it cannot see
 
 - **The contents of encrypted connections.** For HTTPS, Tattle knows the site
   and the amount of data, not the pages or what was sent.
 - **Names for some connections.** A destination shows as a bare address when
-  the guest uses encrypted DNS and the connection is HTTP/3, or when it
-  connects by address.
+  the guest connects by address, or uses a protocol other than HTTPS, HTTP/3
+  or HTTP together with encrypted DNS.
 - **Docker containers inside a VM.** They appear as the VM.
 - **Guests that bypass the bridge**, such as a VM with a passed-through
   network card.

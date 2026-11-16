@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/istorry/tattle/internal/decode"
+	"github.com/istorry/tattle/internal/decode/quictest"
 	"github.com/istorry/tattle/internal/model"
 )
 
@@ -260,5 +261,62 @@ func TestSplitHandshakeGivesUpCleanly(t *testing.T) {
 	}
 	if tr.hellos != maxHellosAtOnce {
 		t.Errorf("hellos = %d, want the cap %d", tr.hellos, maxHellosAtOnce)
+	}
+}
+
+func TestNameIsReadFromHTTP3(t *testing.T) {
+	// A handshake too big for one packet: its pieces are spread over two
+	// QUIC packets and shuffled, which is what current browsers send.
+	hello := quictest.Hello("h3.example.com", 1500)
+	n := len(hello)
+	dcid := []byte{1, 2, 3, 4, 5, 6, 7, 8}
+	first := quictest.ClientInitial(quictest.V1, dcid, 0, []quictest.Frag{
+		{Offset: 700, Data: hello[700:1000]}, {Offset: 0, Data: hello[:400]},
+	}, 1200)
+	second := quictest.ClientInitial(quictest.V1, dcid, 1, []quictest.Frag{
+		{Offset: 1000, Data: hello[1000:n]}, {Offset: 400, Data: hello[400:700]},
+	}, 1200)
+
+	udp := func(tr *Tracker, cport uint16, payload []byte) {
+		tr.Handle(pkt(vmMAC, gateway, "192.168.1.20", "198.51.100.30", decode.ProtoUDP, cport, 443, 0, payload), 42+len(payload), t0)
+	}
+
+	tr := newTracker()
+	udp(tr, 54000, first)
+	if tr.hellos != 1 {
+		t.Fatalf("after the first packet: hellos = %d, want 1", tr.hellos)
+	}
+	udp(tr, 54000, second)
+	if d := only(t, tr.Flush(t0)); d.Domain != "h3.example.com" || d.Proto != "udp" {
+		t.Errorf("got %+v", d)
+	}
+	if tr.hellos != 0 {
+		t.Errorf("hellos = %d after the name was found", tr.hellos)
+	}
+
+	// Packets in the other order work too.
+	tr = newTracker()
+	udp(tr, 54001, second)
+	udp(tr, 54001, first)
+	if d := only(t, tr.Flush(t0)); d.Domain != "h3.example.com" {
+		t.Errorf("reversed packets: %+v", d)
+	}
+
+	// If the second packet never comes, the pieces are let go once the
+	// connection has moved on to ordinary data.
+	tr = newTracker()
+	udp(tr, 54002, first)
+	for i := 0; i < sniffPackets; i++ {
+		udp(tr, 54002, []byte{0x40, 1, 2, 3, 4, 5})
+	}
+	if d := only(t, tr.Flush(t0)); d.Domain != "" || tr.hellos != 0 {
+		t.Errorf("abandoned handshake: domain %q, hellos %d", d.Domain, tr.hellos)
+	}
+
+	// Other UDP traffic to port 443 is left alone.
+	tr = newTracker()
+	udp(tr, 54003, make([]byte, 1200))
+	if tr.hellos != 0 {
+		t.Errorf("buffered non-QUIC data")
 	}
 }

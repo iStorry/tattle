@@ -99,9 +99,9 @@ curl -s -o /dev/null https://www.proxmox.com
       tagged "Inside your network".
 
 - [ ] **3i. Desktop browser.** In a VM with a desktop, open a few HTTPS
-      sites in Chrome or Firefox. They appear by name. Some may still show
-      as bare addresses when the browser uses HTTP/3 (roadmap step 4); note
-      roughly how many.
+      sites in Chrome or Firefox. They appear by name, whether the browser
+      used HTTPS or HTTP/3 ("Secure web (HTTP/3)"). Note any that show as
+      bare addresses.
 
 - [ ] **3j. Nothing is misattributed.** While idle, no machine shows traffic
       you know belongs to another.
@@ -145,8 +145,6 @@ systemctl restart tattle
 These are known and already on the roadmap. Note them only if they are worse
 than described.
 
-- Sites a browser reaches over HTTP/3 show as bare addresses (roadmap
-  step 4).
 - Guests behind host NAT count some traffic twice (roadmap step 5).
 - Docker containers inside a VM appear as the VM.
 
