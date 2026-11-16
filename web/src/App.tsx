@@ -65,7 +65,7 @@ function useDebounced<T>(value: T, ms: number): T {
   return v
 }
 
-export default function App() {
+export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; onSignOut: () => void }) {
   const [range, setRange] = useState(RANGES[1].seconds)
   const [machine, setMachine] = useState('')
   const [tab, setTab] = useState<Tab>('out')
@@ -183,6 +183,11 @@ export default function App() {
         <a className="nav-link" href={route === 'settings' ? '#/' : '#/settings'}>
           {route === 'settings' ? 'Dashboard' : 'Settings'}
         </a>
+        {canSignOut && (
+          <button className="nav-link" onClick={onSignOut}>
+            Sign out
+          </button>
+        )}
       </header>
 
       {status.demo && (
@@ -195,6 +200,7 @@ export default function App() {
       {route === 'settings' ? (
         <SettingsPage
           info={info}
+          canChangePassword={canSignOut}
           onSaved={(saved) => {
             setInfo(saved)
             setScope(saved.settings.show)
@@ -319,7 +325,7 @@ export default function App() {
   )
 }
 
-function Logo() {
+export function Logo() {
   return (
     <span className="logo">
       <svg viewBox="0 0 32 32" aria-hidden="true">

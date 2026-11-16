@@ -77,14 +77,43 @@ export type Conversation = {
   lastSeen: number
 }
 
+export type AuthState = {
+  enabled: boolean // false in demo mode, where there is nothing to sign in to
+  setup: boolean // no password yet: show first-time setup
+  signedIn: boolean
+}
+
+let unauthorized: (() => void) | null = null
+
+/** Registers what to do when the server says the session has ended. */
+export function onUnauthorized(handler: (() => void) | null) {
+  unauthorized = handler
+}
+
 async function get<T>(path: string, params: Record<string, string | number> = {}): Promise<T> {
   const query = new URLSearchParams()
   for (const [k, v] of Object.entries(params)) {
     if (v !== '') query.set(k, String(v))
   }
   const res = await fetch(`${path}?${query}`)
+  if (res.status === 401) unauthorized?.()
   if (!res.ok) throw new Error(`${path}: ${res.status}`)
   return res.json() as Promise<T>
+}
+
+/** Sends JSON. The server explains a refusal in plain words, which becomes the error. */
+async function send(method: string, path: string, body: unknown): Promise<Response> {
+  const res = await fetch(path, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const text = (await res.text()).trim()
+    if (res.status === 401 && !path.startsWith('/api/auth/')) unauthorized?.()
+    throw new Error(text ? text.charAt(0).toUpperCase() + text.slice(1) + '.' : 'Something went wrong.')
+  }
+  return res
 }
 
 export const api = {
@@ -97,14 +126,11 @@ export const api = {
     get<Conversation[]>('/api/activity', { range, machine, scope, q, limit: 300 }),
   split: (range: number, machine: string) => get<Split>('/api/split', { range, machine }),
   settings: () => get<SettingsInfo>('/api/settings'),
-  saveSettings: async (settings: Settings): Promise<SettingsInfo> => {
-    const res = await fetch('/api/settings', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(settings),
-    })
-    // The server explains a rejected setting in plain words.
-    if (!res.ok) throw new Error((await res.text()).trim() || 'The settings could not be saved.')
-    return res.json() as Promise<SettingsInfo>
-  },
+  saveSettings: async (settings: Settings): Promise<SettingsInfo> =>
+    (await send('PUT', '/api/settings', settings)).json() as Promise<SettingsInfo>,
+  auth: () => get<AuthState>('/api/auth'),
+  setup: (code: string, password: string) => send('POST', '/api/auth/setup', { code, password }),
+  login: (password: string) => send('POST', '/api/auth/login', { password }),
+  logout: () => send('POST', '/api/auth/logout', {}),
+  changePassword: (current: string, next: string) => send('POST', '/api/auth/password', { current, new: next }),
 }

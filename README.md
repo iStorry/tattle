@@ -32,12 +32,24 @@ Then on the host:
 systemctl enable --now tattle
 ```
 
-Open `http://your-proxmox:8477`.
+Open `http://your-proxmox:8477`. The first visit asks you to choose a
+password and to enter a setup code, which shows that the host is yours. The
+code is in the service log:
 
-Anyone who can reach that address can see the dashboard. To require a
-password, uncomment the `TATTLE_PASSWORD` line in the service file. The
-browser asks for a username too; any username works. The password travels
-unencrypted unless you put Tattle behind an HTTPS reverse proxy.
+```bash
+journalctl -u tattle | grep "setup code" | tail -1
+```
+
+After that, nothing but the sign-in page can be seen without the password.
+Wrong guesses are limited. If you forget the password, run this on the host
+and set a new one in the dashboard:
+
+```bash
+tattle reset-password
+```
+
+The password travels unencrypted unless you put Tattle behind an HTTPS
+reverse proxy.
 
 ## Settings
 
@@ -56,7 +68,8 @@ opens. Settings are saved on the host and apply to everyone.
 | `--retention` | `7` | Days of history to keep |
 | `--local-net` | none | Extra networks to count as inside your network, comma separated |
 | `--pve-dir` | `/etc/pve` | Proxmox config directory |
-| `--demo` | off | Show invented traffic |
+| `--demo` | off | Show invented traffic, with no sign-in |
+| `--demo-login` | off | With `--demo`, also require signing in |
 
 ## How it works
 

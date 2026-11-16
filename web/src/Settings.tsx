@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { api, type Scope, type Settings, type SettingsInfo } from './api'
+import { PasswordCard } from './Auth'
 
 const SHOW: { value: Scope; title: string; hint: string }[] = [
   { value: 'all', title: 'Show everything', hint: 'Traffic inside your network and traffic to and from the internet.' },
@@ -15,7 +16,7 @@ const SHOW: { value: Scope; title: string; hint: string }[] = [
   },
 ]
 
-export function SettingsPage(p: { info: SettingsInfo; onSaved: (info: SettingsInfo) => void }) {
+export function SettingsPage(p: { info: SettingsInfo; canChangePassword: boolean; onSaved: (info: SettingsInfo) => void }) {
   const [draft, setDraft] = useState<Settings>(p.info.settings)
   const [entry, setEntry] = useState('')
   const [state, setState] = useState<'idle' | 'saving' | 'saved'>('idle')
@@ -55,12 +56,13 @@ export function SettingsPage(p: { info: SettingsInfo; onSaved: (info: SettingsIn
   }
 
   return (
-    <form className="settings" onSubmit={save}>
+    <div className="settings">
       <div className="heading">
         <a href="#/">← Back to the dashboard</a>
         <h1>Settings</h1>
         <p>These apply to everyone who opens this dashboard.</p>
       </div>
+      <form className="settings-form" onSubmit={save}>
 
       <section className="card">
         <h2>What counts as your network</h2>
@@ -175,6 +177,8 @@ export function SettingsPage(p: { info: SettingsInfo; onSaved: (info: SettingsIn
           </span>
         )}
       </div>
-    </form>
+      </form>
+      {p.canChangePassword && <PasswordCard />}
+    </div>
   )
 }

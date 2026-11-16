@@ -5,8 +5,6 @@ Wants=network-online.target
 
 [Service]
 ExecStart=/usr/local/bin/tattle
-# Uncomment to require a password (any username) for the dashboard.
-#Environment=TATTLE_PASSWORD=change-me
 StateDirectory=tattle
 Restart=on-failure
 RestartSec=5

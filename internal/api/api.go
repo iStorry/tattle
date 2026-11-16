@@ -2,7 +2,6 @@
 package api
 
 import (
-	"crypto/subtle"
 	"encoding/json"
 	"io/fs"
 	"log"
@@ -33,19 +32,25 @@ type Status struct {
 }
 
 type Server struct {
-	store    *store.Store
-	status   *Status
-	password string
-	mux      *http.ServeMux
+	store  *store.Store
+	status *Status
+	auth   auth
+	mux    *http.ServeMux
 
 	mu       sync.Mutex
 	settings store.Settings
 }
 
-// New builds the HTTP handler. ui is the built dashboard; password, when
-// set, is required (with any username) to open the dashboard.
-func New(st *store.Store, status *Status, ui fs.FS, password string) *Server {
-	s := &Server{store: st, status: status, password: password, mux: http.NewServeMux()}
+// New builds the HTTP handler. ui is the built dashboard. With requireLogin,
+// everything but the sign-in pages needs a signed-in browser.
+func New(st *store.Store, status *Status, ui fs.FS, requireLogin bool) *Server {
+	s := &Server{store: st, status: status, mux: http.NewServeMux()}
+	s.auth.enabled = requireLogin
+	s.mux.HandleFunc("GET /api/auth", s.handleAuth)
+	s.mux.HandleFunc("POST /api/auth/setup", s.handleSetup)
+	s.mux.HandleFunc("POST /api/auth/login", s.handleLogin)
+	s.mux.HandleFunc("POST /api/auth/logout", s.handleLogout)
+	s.mux.HandleFunc("POST /api/auth/password", s.handleChangePassword)
 	settings, err := st.LoadSettings()
 	if err != nil {
 		log.Printf("reading settings, using the defaults: %v", err)
@@ -65,16 +70,26 @@ func New(st *store.Store, status *Status, ui fs.FS, password string) *Server {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if s.password != "" {
-		_, pass, ok := r.BasicAuth()
-		if !ok || subtle.ConstantTimeCompare([]byte(pass), []byte(s.password)) != 1 {
-			w.Header().Set("WWW-Authenticate", `Basic realm="Tattle"`)
-			http.Error(w, "password required", http.StatusUnauthorized)
-			return
-		}
+	h := w.Header()
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Referrer-Policy", "no-referrer")
+	// The dashboard loads nothing from other sites and may not be framed.
+	h.Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'")
+	if s.auth.enabled && strings.HasPrefix(r.URL.Path, "/api/") && !openPaths[r.URL.Path] && !s.signedIn(r) {
+		http.Error(w, "sign in first", http.StatusUnauthorized)
+		return
 	}
-	w.Header().Set("X-Content-Type-Options", "nosniff")
 	s.mux.ServeHTTP(w, r)
+}
+
+// openPaths are the only API paths that answer without a session. The
+// dashboard's own files are also served, since they hold no data and are
+// what draws the sign-in page.
+var openPaths = map[string]bool{
+	"/api/auth":        true,
+	"/api/auth/setup":  true,
+	"/api/auth/login":  true,
+	"/api/auth/logout": true,
 }
 
 // apply makes settings take effect: the host's own networks and the ones
@@ -184,17 +199,8 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
-	// Browsers will not send JSON to another site without asking first, so
-	// insisting on it stops other web pages from changing the settings.
-	if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
-		http.Error(w, "settings must be sent as JSON", http.StatusUnsupportedMediaType)
-		return
-	}
 	settings := store.DefaultSettings()
-	body := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10))
-	body.DisallowUnknownFields()
-	if err := body.Decode(&settings); err != nil {
-		http.Error(w, "the settings could not be read", http.StatusBadRequest)
+	if !readJSON(w, r, &settings) {
 		return
 	}
 	custom, err := settings.Validate()
@@ -203,8 +209,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.store.SaveSettings(settings); err != nil {
-		log.Printf("api: saving settings: %v", err)
-		http.Error(w, "the settings could not be saved", http.StatusInternalServerError)
+		fail(w, "saving settings", err)
 		return
 	}
 	s.apply(settings, custom)

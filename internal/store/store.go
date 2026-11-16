@@ -48,6 +48,10 @@ CREATE TABLE IF NOT EXISTS settings (
 	key   TEXT PRIMARY KEY,
 	value TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS sessions (
+	token_hash TEXT PRIMARY KEY,
+	expires    INTEGER NOT NULL
+) WITHOUT ROWID;
 `
 
 type Store struct{ db *sql.DB }

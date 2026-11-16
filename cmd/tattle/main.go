@@ -39,21 +39,37 @@ func main() {
 		retention = flag.Int("retention", 7, "days of history to keep")
 		localNets = flag.String("local-net", "", "extra networks to count as inside your network, comma separated (e.g. 10.20.30.0/24)")
 		demoMode  = flag.Bool("demo", false, "show invented traffic instead of capturing (works on any computer)")
+		demoLogin = flag.Bool("demo-login", false, "with --demo, also require signing in (to try the sign-in pages)")
 		showVer   = flag.Bool("version", false, "print the version and exit")
 	)
+	flag.Usage = func() {
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage: tattle [options]\n       tattle [--db path] reset-password\n\nOptions:\n")
+		flag.PrintDefaults()
+	}
 	flag.Parse()
 	if *showVer {
 		fmt.Println("tattle", version)
 		return
 	}
+	if flag.Arg(0) == "reset-password" {
+		if err := resetPassword(*dbPath); err != nil {
+			fmt.Fprintln(os.Stderr, "tattle:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if flag.NArg() > 0 {
+		fmt.Fprintf(os.Stderr, "tattle: unknown command %q\n", flag.Arg(0))
+		os.Exit(2)
+	}
 	log.SetFlags(log.Ldate | log.Ltime)
 
-	if err := run(*listen, *dbPath, *ifaces, *pveDir, *localNets, *retention, *demoMode); err != nil {
+	if err := run(*listen, *dbPath, *ifaces, *pveDir, *localNets, *retention, *demoMode, !*demoMode || *demoLogin); err != nil {
 		log.Fatalf("tattle: %v", err)
 	}
 }
 
-func run(listen, dbPath, ifaceFlag, pveDir, localNets string, retention int, demoMode bool) error {
+func run(listen, dbPath, ifaceFlag, pveDir, localNets string, retention int, demoMode, requireLogin bool) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -87,10 +103,9 @@ func run(listen, dbPath, ifaceFlag, pveDir, localNets string, retention int, dem
 	}
 	defer st.Close()
 
-	password := os.Getenv("TATTLE_PASSWORD")
 	srv := &http.Server{
 		Addr:              listen,
-		Handler:           api.New(st, status, ui.Files(), password),
+		Handler:           api.New(st, status, ui.Files(), requireLogin),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	go func() {
@@ -106,9 +121,6 @@ func run(listen, dbPath, ifaceFlag, pveDir, localNets string, retention int, dem
 		log.Printf("watching %s", strings.Join(status.Interfaces, ", "))
 	}
 	log.Printf("dashboard on http://%s", displayAddr(listen))
-	if password == "" && !demoMode {
-		log.Printf("anyone who can reach that address can see it; set TATTLE_PASSWORD to require a password")
-	}
 
 	select {
 	case err := <-errc:
@@ -120,6 +132,26 @@ func run(listen, dbPath, ifaceFlag, pveDir, localNets string, retention int, dem
 	shutdown, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	return srv.Shutdown(shutdown)
+}
+
+// resetPassword is for an owner who has forgotten the password. It needs
+// access to the host, which is what proves they are the owner.
+func resetPassword(dbPath string) error {
+	if _, err := os.Stat(dbPath); err != nil {
+		return fmt.Errorf("no database at %s (use --db to point at it)", dbPath)
+	}
+	st, err := store.Open(dbPath)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	if err := st.ClearPassword(); err != nil {
+		return err
+	}
+	fmt.Println("The password has been removed and everyone is signed out.")
+	fmt.Println("Open the dashboard to set a new one. The setup code will be in the log:")
+	fmt.Println("  journalctl -u tattle | grep 'setup code' | tail -1")
+	return nil
 }
 
 func displayAddr(listen string) string {
@@ -207,9 +239,12 @@ func startLive(ctx context.Context, st *store.Store, status *api.Status, ifaceFl
 				for _, src := range sources {
 					status.Dropped.Add(src.Dropped())
 				}
-			case <-prune.C:
+			case now := <-prune.C:
 				if err := st.Prune(cutoff()); err != nil {
 					log.Printf("removing old history: %v", err)
+				}
+				if err := st.PruneSessions(now); err != nil {
+					log.Printf("removing expired sessions: %v", err)
 				}
 			}
 		}

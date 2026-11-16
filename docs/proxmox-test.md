@@ -37,8 +37,16 @@ journalctl -u tattle -n 20 --no-pager
 
 - [ ] **1a.** The log says `watching vmbr0` (or your bridges) and
       `dashboard on http://...:8477`, with no errors.
-- [ ] **1b.** `http://your-proxmox:8477` opens the dashboard and it does
-      **not** say "Demo data".
+- [ ] **1b.** `http://your-proxmox:8477` shows "Set up Tattle". The setup
+      code from this command is accepted, and you can choose a password:
+
+```bash
+journalctl -u tattle | grep "setup code" | tail -1
+```
+
+- [ ] **1c.** After setup the dashboard opens and does **not** say
+      "Demo data". "Sign out" returns to a sign-in page, and the password
+      gets you back in.
 
 If the service fails to start, run `tattle` directly in a terminal on the
 host instead and carry on. Send the service error; the hardening options in
