@@ -3,9 +3,9 @@
 What changed in each release, newest first. Versions follow
 [semantic versioning](https://semver.org).
 
-## Unreleased
+## 0.1.0 (2026-11-16)
 
-This will be the first release, 0.1.0.
+The first release.
 
 ### Seeing traffic
 
