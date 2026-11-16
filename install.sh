@@ -30,13 +30,16 @@ fetch() {
 
 # latest_version prints the tag of the newest full release. GitHub answers
 # /releases/latest with a redirect to it, which needs no API and no login.
+# It returns 1 if GitHub could not be reached, and 2 if it was reached but
+# there is no full release yet (GitHub then redirects to /releases instead;
+# drafts and pre-releases never count as the latest).
 latest_version() {
 	local url
 	url=$(curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
 		--output /dev/null --write-out '%{url_effective}' "$BASE_URL/releases/latest") || return 1
 	case "$url" in
 		*/releases/tag/*) printf '%s\n' "${url##*/releases/tag/}" ;;
-		*) return 1 ;;
+		*) return 2 ;;
 	esac
 }
 
@@ -80,8 +83,13 @@ main() {
 	else
 		local version="${TATTLE_VERSION:-}"
 		if [ -z "$version" ]; then
-			version=$(latest_version) ||
-				fail "could not find the latest release at $BASE_URL/releases. Check the internet connection, or name a release with TATTLE_VERSION=v0.1.0."
+			local status=0
+			version=$(latest_version) || status=$?
+			case "$status" in
+				0) ;;
+				2) fail "there is no full release of Tattle yet, only pre-releases. To install one, name it, such as TATTLE_VERSION=v0.1.0-rc1. See $BASE_URL/releases" ;;
+				*) fail "could not reach $BASE_URL/releases to find the latest release. Check the internet connection, or name a release with TATTLE_VERSION=v0.1.0." ;;
+			esac
 		fi
 		case "$version" in v*) ;; *) version="v$version" ;; esac
 
