@@ -34,8 +34,19 @@ jobs:
       - name: Fetch the address-owner table
         run: make data
 
+      # A pre-release such as v0.1.0-rc1 must sort before 0.1.0 for apt, which
+      # needs "0.1.0~rc1". GitHub does not keep "~" in file names, so the
+      # files are named with the tag's own spelling.
       - name: Build the packages
-        run: make deb VERSION="$GITHUB_REF_NAME" DEB_VERSION="${GITHUB_REF_NAME#v}"
+        run: |
+          name="${GITHUB_REF_NAME#v}"
+          version=$(printf '%s' "$name" | sed 's/-/~/')
+          make deb VERSION="$GITHUB_REF_NAME" DEB_VERSION="$version"
+          if [ "$name" != "$version" ]; then
+            for arch in amd64 arm64; do
+              mv "dist/tattle_${version}_${arch}.deb" "dist/tattle_${name}_${arch}.deb"
+            done
+          fi
 
       - name: Install, upgrade and remove the package
         run: sudo packaging/test-deb.sh "dist/tattle_${GITHUB_REF_NAME#v}_amd64.deb"
@@ -60,5 +71,7 @@ jobs:
             echo
             echo "The address-owner table in these packages is iptoasn.com's public-domain list as published on $(date -u -r data/ip2asn.tsv.gz +%Y-%m-%d)."
           } > notes.md
+          # A tag with a suffix, such as -rc1, is marked as a pre-release.
+          case "$GITHUB_REF_NAME" in *-*) pre=--prerelease ;; *) pre= ;; esac
           gh release create "$GITHUB_REF_NAME" dist/*.deb dist/SHA256SUMS \
-            --draft --title "Tattle ${GITHUB_REF_NAME#v}" --notes-file notes.md --generate-notes
+            --draft $pre --title "Tattle ${GITHUB_REF_NAME#v}" --notes-file notes.md --generate-notes

@@ -3,7 +3,7 @@ LDFLAGS := -s -w -X main.version=$(VERSION)
 
 # A package version must start with a digit: v0.1.0 becomes 0.1.0, and an
 # untagged build sorts before any release.
-DEB_VERSION ?= $(shell git describe --tags --exact-match 2>/dev/null | sed 's/^v//' | grep . || echo 0.0.0~git$$(git rev-parse --short HEAD 2>/dev/null || echo dev))
+DEB_VERSION ?= $(shell git describe --tags --exact-match 2>/dev/null | sed 's/^v//; s/-/~/' | grep . || echo 0.0.0~git$$(git rev-parse --short HEAD 2>/dev/null || echo dev))
 
 .PHONY: build web linux demo data deb test lint clean
 
