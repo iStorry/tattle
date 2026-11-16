@@ -139,8 +139,8 @@ func scope(r *http.Request) string {
 	return store.ScopeAll
 }
 
-// maxRange matches the longest range the dashboard offers.
-const maxRange = 31 * 24 * time.Hour
+// maxRange is the longest history that can be kept.
+const maxRange = 366 * 24 * time.Hour
 
 // since reads the "range" query parameter, a number of seconds back from now.
 func since(r *http.Request, now time.Time) time.Time {
@@ -177,6 +177,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"demo":          s.status.Demo,
 		"interfaces":    s.status.Interfaces,
 		"retentionDays": s.Settings().RetentionDays,
+		"detailDays":    s.Settings().DetailDays,
 		"localNetworks": s.status.LocalNets,
 		"started":       s.status.Started.UnixMilli(),
 		"now":           time.Now().UnixMilli(),
@@ -289,12 +290,12 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		fail(w, "saving settings", err)
 		return
 	}
-	shorter := settings.RetentionDays < s.Settings().RetentionDays
+	old := s.Settings()
 	s.apply(settings, custom)
-	if shorter {
-		// Keeping less history takes effect now, not at the next clean-up.
-		if err := s.store.Prune(time.Now().AddDate(0, 0, -settings.RetentionDays)); err != nil {
-			log.Printf("api: removing old history: %v", err)
+	// Keeping less takes effect now, not at the next clean-up.
+	if settings.RetentionDays < old.RetentionDays || settings.DetailDays < old.DetailDays {
+		if err := s.store.Tidy(time.Now(), settings); err != nil {
+			log.Printf("api: tidying history: %v", err)
 		}
 	}
 	writeJSON(w, s.settingsResponse(), nil)

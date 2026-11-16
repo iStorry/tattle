@@ -134,11 +134,11 @@ func TestSettings(t *testing.T) {
 		t.Fatalf("defaults = %+v, %v", got, err)
 	}
 
-	if got.RetentionDays != DefaultRetentionDays {
+	if got.RetentionDays != DefaultRetentionDays || got.DetailDays != DefaultDetailDays {
 		t.Errorf("default retention = %d", got.RetentionDays)
 	}
 
-	in := Settings{LocalNets: []string{" 10.20.30.7/24 ", "10.20.30.0/24", "", "192.0.2.5", "2001:db8::/32"}, Show: ScopeInternet, RetentionDays: 30}
+	in := Settings{LocalNets: []string{" 10.20.30.7/24 ", "10.20.30.0/24", "", "192.0.2.5", "2001:db8::/32"}, Show: ScopeInternet, RetentionDays: 30, DetailDays: 7}
 	nets, err := in.Validate()
 	if err != nil {
 		t.Fatal(err)
@@ -160,20 +160,37 @@ func TestSettings(t *testing.T) {
 		t.Errorf("reloaded = %+v", got)
 	}
 
-	// Settings saved before retention existed keep working, with the default.
-	if _, err := st.db.Exec(`UPDATE settings SET value = '{"localNets":[],"privateIsLocal":true,"show":"local"}' WHERE key = 'settings'`); err != nil {
-		t.Fatal(err)
+	// Settings saved by older versions keep working: one from before either
+	// period existed, and one that kept fewer days than today's detail period.
+	saved := func(value string) Settings {
+		t.Helper()
+		if _, err := st.db.Exec(`UPDATE settings SET value = ? WHERE key = 'settings'`, value); err != nil {
+			t.Fatal(err)
+		}
+		got, err := st.LoadSettings()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
 	}
-	if got, _ = st.LoadSettings(); got.Show != ScopeLocal || got.RetentionDays != DefaultRetentionDays {
-		t.Errorf("older saved settings = %+v", got)
+	if got := saved(`{"localNets":[],"privateIsLocal":true,"show":"local"}`); got.Show != ScopeLocal ||
+		got.RetentionDays != DefaultRetentionDays || got.DetailDays != DefaultDetailDays {
+		t.Errorf("oldest saved settings = %+v", got)
+	}
+	if got := saved(`{"localNets":[],"privateIsLocal":true,"show":"local","retentionDays":3}`); got.Show != ScopeLocal ||
+		got.RetentionDays != 3 || got.DetailDays != 3 {
+		t.Errorf("settings keeping three days = %+v", got)
 	}
 
 	for _, bad := range []Settings{
-		{Show: "sideways", RetentionDays: 7},
-		{Show: ScopeAll, RetentionDays: 7, LocalNets: []string{"my network"}},
-		{Show: ScopeAll, RetentionDays: 7, LocalNets: []string{"0.0.0.0/0"}},
-		{Show: ScopeAll, RetentionDays: 0},
-		{Show: ScopeAll, RetentionDays: 91},
+		{Show: "sideways", RetentionDays: 7, DetailDays: 7},
+		{Show: ScopeAll, RetentionDays: 7, DetailDays: 7, LocalNets: []string{"my network"}},
+		{Show: ScopeAll, RetentionDays: 7, DetailDays: 7, LocalNets: []string{"0.0.0.0/0"}},
+		{Show: ScopeAll, RetentionDays: 0, DetailDays: 1},
+		{Show: ScopeAll, RetentionDays: 366, DetailDays: 7},
+		{Show: ScopeAll, RetentionDays: 90, DetailDays: 0},
+		{Show: ScopeAll, RetentionDays: 90, DetailDays: 31},
+		{Show: ScopeAll, RetentionDays: 5, DetailDays: 7},
 	} {
 		if _, err := bad.Validate(); err == nil {
 			t.Errorf("accepted %+v", bad)

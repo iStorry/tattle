@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Timeline } from './api'
-import { bytes, clock } from './format'
+import { bytes, clock, moment } from './format'
 
 const HEIGHT = 190
 const TOP = 18
@@ -45,7 +45,6 @@ export function TrafficChart({ data, range }: { data: Timeline; range: number })
   const slot = n > 0 ? width / n : 0
   const barW = Math.max(1, slot - 2)
   const scale = (v: number) => (v / max) * plotH
-  const withDay = range > 86400
   const tickEvery = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(width / 110))))
   const active = hover !== null && hover < n ? pts[hover] : null
 
@@ -100,7 +99,7 @@ export function TrafficChart({ data, range }: { data: Timeline; range: number })
                 i % tickEvery === 0 &&
                 i * slot + 60 < width && (
                   <text key={p.t} className="axis" x={i * slot} y={HEIGHT - 5}>
-                    {clock(p.t, withDay)}
+                    {clock(p.t, range)}
                   </text>
                 ),
             )}
@@ -112,7 +111,7 @@ export function TrafficChart({ data, range }: { data: Timeline; range: number })
             style={hover * slot > width / 2 ? { right: width - hover * slot + 8 } : { left: (hover + 1) * slot + 8 }}
           >
             <div className="tooltip-title">
-              {clock(active.t, withDay)} – {clock(active.t + data.step, false)}
+              {moment(active.t, range)} – {moment(active.t + data.step, data.step)}
             </div>
             <div>
               <i className="swatch received" /> Received <b>{bytes(active.received)}</b>

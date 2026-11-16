@@ -167,7 +167,19 @@ func around(n int64) int64 {
 // minute being generated, so the live loop can emit a little every few
 // seconds and still average out to the same rates as the backfill.
 func minute(lab []machine, at, opened time.Time, scale float64) []model.FlowDelta {
-	bucket := at.Unix() / 60 * 60
+	return span(lab, at, opened, scale, 60)
+}
+
+// hour produces an hour's traffic as hourly totals, the form older history
+// is kept in.
+func hour(lab []machine, at, opened time.Time) []model.FlowDelta {
+	return span(lab, at, opened, 60, 3600)
+}
+
+// span produces the traffic for one bucket of the given width in seconds.
+// scale is how many minutes' worth of activity the bucket holds.
+func span(lab []machine, at, opened time.Time, scale float64, width int64) []model.FlowDelta {
+	bucket := at.Unix() / width * width
 	// Homes are quieter at night.
 	hour := float64(at.Hour()) + float64(at.Minute())/60
 	if hour < 7 {
@@ -178,13 +190,17 @@ func minute(lab []machine, at, opened time.Time, scale float64) []model.FlowDelt
 		if d.fresh > 0 && at.Before(opened.Add(-d.fresh)) {
 			return
 		}
-		if rand.Float64() > d.weight*scale {
+		// Usually one connection or none; over a longer bucket, several.
+		conns := int64(1)
+		if expected := d.weight * scale; expected > 1 {
+			conns = int64(expected + rand.Float64())
+		} else if rand.Float64() > expected {
 			return
 		}
 		out = append(out, model.FlowDelta{
 			Bucket: bucket, ClientID: clientID, ClientIP: clientIP, ServerID: serverID, ServerIP: serverIP,
 			ServerPort: d.port, Proto: d.proto, Domain: d.domain,
-			BytesUp: around(d.up), BytesDown: around(d.down), Packets: 4 + rand.Int64N(40), Conns: 1,
+			BytesUp: conns * around(d.up), BytesDown: conns * around(d.down), Packets: conns * (4 + rand.Int64N(40)), Conns: conns,
 			FirstSeen: at.UnixMilli() - rand.Int64N(1500), LastSeen: at.UnixMilli(),
 		})
 	}
@@ -202,7 +218,7 @@ func minute(lab []machine, at, opened time.Time, scale float64) []model.FlowDelt
 	return out
 }
 
-// Run fills in a bit over a day of history and then keeps producing live traffic until
+// Run fills in five weeks of history and then keeps producing live traffic until
 // ctx is cancelled.
 func Run(ctx context.Context, st *store.Store) error {
 	l := lab()
@@ -221,9 +237,14 @@ func Run(ctx context.Context, st *store.Store) error {
 		return fmt.Errorf("demo: %w", err)
 	}
 	var history []model.FlowDelta
-	// More than a day, so every machine is past its learning period and
-	// "What's new" has something to say.
-	for t := now.Add(-30 * time.Hour); t.Before(now); t = t.Add(time.Minute) {
+	// Five weeks of history, so the longer time ranges have something to
+	// show and every machine is past its learning period: hourly totals for
+	// all but the last two days, as a real database would hold.
+	detailFrom := now.Add(-48 * time.Hour).Truncate(time.Hour)
+	for t := now.Add(-35 * 24 * time.Hour).Truncate(time.Hour); t.Before(detailFrom); t = t.Add(time.Hour) {
+		history = append(history, hour(l, t, now)...)
+	}
+	for t := detailFrom; t.Before(now); t = t.Add(time.Minute) {
 		history = append(history, minute(l, t, now, 1)...)
 	}
 	if err := st.Apply(history); err != nil {

@@ -103,19 +103,25 @@ type Settings struct {
 	PrivateIsLocal bool `json:"privateIsLocal"`
 	// Show is the scope the dashboard opens with.
 	Show string `json:"show"`
-	// RetentionDays is how many days of history are kept.
+	// RetentionDays is how many days of history are kept in all.
 	RetentionDays int `json:"retentionDays"`
+	// DetailDays is how many of those days keep minute-by-minute detail.
+	// Older history is kept as one total per hour, which takes far less room.
+	DetailDays int `json:"detailDays"`
 }
 
-// Limits on RetentionDays.
+// Limits on RetentionDays and DetailDays.
 const (
 	MinRetentionDays     = 1
-	MaxRetentionDays     = 90
-	DefaultRetentionDays = 7
+	MaxRetentionDays     = 365
+	DefaultRetentionDays = 90
+	MaxDetailDays        = 30
+	DefaultDetailDays    = 7
 )
 
 func DefaultSettings() Settings {
-	return Settings{LocalNets: []string{}, PrivateIsLocal: true, Show: ScopeAll, RetentionDays: DefaultRetentionDays}
+	return Settings{LocalNets: []string{}, PrivateIsLocal: true, Show: ScopeAll,
+		RetentionDays: DefaultRetentionDays, DetailDays: DefaultDetailDays}
 }
 
 // Validate tidies the settings and returns LocalNets parsed. The error is
@@ -128,6 +134,12 @@ func (st *Settings) Validate() ([]netip.Prefix, error) {
 	}
 	if st.RetentionDays < MinRetentionDays || st.RetentionDays > MaxRetentionDays {
 		return nil, fmt.Errorf("history can be kept for %d to %d days", MinRetentionDays, MaxRetentionDays)
+	}
+	if st.DetailDays < MinRetentionDays || st.DetailDays > MaxDetailDays {
+		return nil, fmt.Errorf("minute-by-minute detail can be kept for %d to %d days", MinRetentionDays, MaxDetailDays)
+	}
+	if st.DetailDays > st.RetentionDays {
+		return nil, errors.New("minute-by-minute detail cannot be kept for longer than the history itself")
 	}
 	if len(st.LocalNets) > 64 {
 		return nil, errors.New("too many networks; 64 is the limit")
@@ -177,6 +189,9 @@ func (s *Store) LoadSettings() (Settings, error) {
 	if err := json.Unmarshal([]byte(raw), &st); err != nil {
 		return DefaultSettings(), nil // unreadable settings fall back to the defaults
 	}
+	// Settings saved before the detail period existed may ask for less
+	// history than the default detail period.
+	st.DetailDays = min(st.DetailDays, st.RetentionDays)
 	if _, err := st.Validate(); err != nil {
 		return DefaultSettings(), nil
 	}

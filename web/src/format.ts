@@ -28,10 +28,26 @@ export function ago(then: number, now: number): string {
   return `${Math.round(h / 24)} d ago`
 }
 
-export function clock(unixSeconds: number, withDay: boolean): string {
+const DAY = 24 * 60 * 60
+
+/**
+ * A point in time, written to suit how much time is on show: just the time
+ * within a day, the weekday too within a week, and the date beyond that.
+ */
+export function clock(unixSeconds: number, spanSeconds: number): string {
   const d = new Date(unixSeconds * 1000)
   const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  return withDay ? `${d.toLocaleDateString([], { weekday: 'short' })} ${time}` : time
+  if (spanSeconds <= DAY) return time
+  if (spanSeconds <= 7 * DAY) return `${d.toLocaleDateString([], { weekday: 'short' })} ${time}`
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+}
+
+/** A point in time in full, for a tooltip. */
+export function moment(unixSeconds: number, spanSeconds: number): string {
+  const d = new Date(unixSeconds * 1000)
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  if (spanSeconds <= DAY) return time
+  return `${d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}, ${time}`
 }
 
 type Service = { label: string; plain?: boolean }

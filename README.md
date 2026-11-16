@@ -95,7 +95,8 @@ The Settings link in the dashboard controls:
   you can add more),
 - whether the dashboard hides traffic inside your network or internet
   traffic when it opens,
-- how many days of history are kept (7 by default, up to 90),
+- how long history is kept: 90 days by default, the most recent 7 of them
+  minute by minute and the rest as hourly totals,
 - the password.
 
 Settings are saved on the host and apply to everyone. The options below are
@@ -119,7 +120,9 @@ only what is needed to start Tattle; everything else is in Settings.
 
 All guest traffic crosses a bridge on the host (`vmbr0`). Tattle listens on the
 bridge and, for each connection, records who started it, where it went, and how
-many bytes moved in each direction. Totals are stored per minute in SQLite.
+many bytes moved in each direction. Totals are stored per minute in SQLite,
+and folded into one total per hour once they are a week old, which takes a
+small fraction of the space.
 
 - **Machine names** come from the VM and container config files in `/etc/pve`,
   matched to traffic by network card (MAC) address.

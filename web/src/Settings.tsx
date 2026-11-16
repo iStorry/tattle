@@ -173,23 +173,45 @@ export function SettingsPage(p: {
 
       <section className="card">
         <h2>How long history is kept</h2>
+        <p className="help">
+          Recent traffic is kept minute by minute. Older traffic is kept as one total per hour, which takes a small
+          fraction of the space and shows the same amounts.
+        </p>
         <label className="field">
-          <span className="field-label">Days of history</span>
+          <span className="field-label">Days of history in all</span>
           <input
             className="input days"
             type="number"
             min={1}
-            max={90}
+            max={365}
             step={1}
             required
             value={Number.isFinite(draft.retentionDays) ? draft.retentionDays : ''}
             onChange={(e) => change({ retentionDays: e.target.valueAsNumber })}
           />
           <span className="help">
-            Between 1 and 90. Older traffic is deleted from the host. Keeping more uses more disk space, and choosing
-            fewer days deletes the older history as soon as you save.
+            Between 1 and 365. Anything older is deleted from the host. The dashboard offers 30 and 90 day views once
+            this much is kept.
           </span>
         </label>
+        <label className="field">
+          <span className="field-label">Days kept minute by minute</span>
+          <input
+            className="input days"
+            type="number"
+            min={1}
+            max={30}
+            step={1}
+            required
+            value={Number.isFinite(draft.detailDays) ? draft.detailDays : ''}
+            onChange={(e) => change({ detailDays: e.target.valueAsNumber })}
+          />
+          <span className="help">
+            Between 1 and 30, and no more than the days in all. This is what uses the disk space: a small lab needs a
+            few megabytes for each of these days.
+          </span>
+        </label>
+        <p className="help">Choosing fewer days of either kind takes effect as soon as you save, and cannot be undone.</p>
       </section>
 
       <div className="actions">

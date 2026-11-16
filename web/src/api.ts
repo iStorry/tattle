@@ -3,6 +3,7 @@ export type Status = {
   demo: boolean
   interfaces: string[]
   retentionDays: number
+  detailDays: number
   localNetworks: string[] | null
   started: number
   now: number
@@ -17,7 +18,8 @@ export type Settings = {
   localNets: string[]
   privateIsLocal: boolean
   show: Scope
-  retentionDays: number
+  retentionDays: number // days of history kept in all
+  detailDays: number // how many of those keep minute-by-minute detail
 }
 
 export type SettingsInfo = { settings: Settings; detected: string[] }

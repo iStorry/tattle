@@ -18,6 +18,8 @@ export const RANGES = [
   { key: '1h', label: '1 hour', phrase: 'hour', seconds: 60 * 60 },
   { key: '24h', label: '24 hours', phrase: '24 hours', seconds: 24 * 60 * 60 },
   { key: '7d', label: '7 days', phrase: '7 days', seconds: 7 * 24 * 60 * 60 },
+  { key: '30d', label: '30 days', phrase: '30 days', seconds: 30 * 24 * 60 * 60 },
+  { key: '90d', label: '90 days', phrase: '90 days', seconds: 90 * 24 * 60 * 60 },
 ] as const
 
 const DEFAULT_RANGE = RANGES[1]

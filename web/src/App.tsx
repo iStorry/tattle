@@ -22,6 +22,9 @@ import { Amounts, Empty, Logo, ScopeTag, Tile } from './parts'
 import { SettingsPage } from './Settings'
 import { formatHash, RANGES, useView, type Sort, type Tab, type View } from './url'
 
+const DAY = 24 * 60 * 60
+const WEEK = 7 * DAY
+
 type Data = {
   machines: Machine[]
   timeline: Timeline
@@ -192,7 +195,10 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
         </span>
         {route === 'dashboard' && (
           <div className="segmented" role="group" aria-label="Time range">
-            {RANGES.map((r) => (
+            {RANGES.filter(
+              // Longer ranges are offered once that much history is kept.
+              (r) => r.seconds <= WEEK || r.seconds === range || status.retentionDays * DAY > (r.seconds === 30 * DAY ? WEEK : 30 * DAY),
+            ).map((r) => (
               <button key={r.seconds} aria-pressed={range === r.seconds} onClick={() => setRange(r.seconds)}>
                 {r.label}
               </button>
@@ -339,7 +345,7 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
           </section>
 
           <footer>
-            Tattle {status.version} · keeps {status.retentionDays} days of history
+            Tattle {status.version} · keeps {status.retentionDays} days of history, the last {status.detailDays} minute by minute
             {status.dropped > 0 && ` · ${count(status.dropped)} packets missed under load`}
             <br />
             Encrypted connections show where they went, not what was said.

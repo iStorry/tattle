@@ -308,16 +308,16 @@ func startLive(ctx context.Context, st *store.Store, status *api.Status, ifaceFl
 		defer prune.Stop()
 		// How long to keep history is a setting, read each time so a
 		// change needs no restart.
-		cutoff := func() time.Time {
+		tidy := func(now time.Time) {
 			settings, err := st.LoadSettings()
 			if err != nil {
 				settings = store.DefaultSettings()
 			}
-			return time.Now().AddDate(0, 0, -settings.RetentionDays)
+			if err := st.Tidy(now, settings); err != nil {
+				log.Printf("tidying history: %v", err)
+			}
 		}
-		if err := st.Prune(cutoff()); err != nil {
-			log.Printf("removing old history: %v", err)
-		}
+		tidy(time.Now())
 		for {
 			select {
 			case <-ctx.Done():
@@ -335,9 +335,7 @@ func startLive(ctx context.Context, st *store.Store, status *api.Status, ifaceFl
 					status.Dropped.Add(src.Dropped())
 				}
 			case now := <-prune.C:
-				if err := st.Prune(cutoff()); err != nil {
-					log.Printf("removing old history: %v", err)
-				}
+				tidy(now)
 				if err := st.PruneSessions(now); err != nil {
 					log.Printf("removing expired sessions: %v", err)
 				}

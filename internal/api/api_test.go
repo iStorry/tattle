@@ -259,15 +259,15 @@ func TestRetentionIsASetting(t *testing.T) {
 	}
 	peers := func() string { return c.want("GET", "/api/peers?range=2592000", "", 200) }
 
-	if body := c.want("GET", "/api/status", "", 200); !strings.Contains(body, `"retentionDays":7`) {
+	if body := c.want("GET", "/api/status", "", 200); !strings.Contains(body, `"retentionDays":90`) {
 		t.Errorf("status = %s", body)
 	}
 	if body := peers(); !strings.Contains(body, "198.51.100.2") {
 		t.Fatalf("five-day-old traffic missing before the change: %s", body)
 	}
 
-	c.want("PUT", "/api/settings", `{"show":"all","localNets":[],"privateIsLocal":true,"retentionDays":0}`, 400)
-	c.want("PUT", "/api/settings", `{"show":"all","localNets":[],"privateIsLocal":true,"retentionDays":3}`, 200)
+	c.want("PUT", "/api/settings", `{"show":"all","localNets":[],"privateIsLocal":true,"retentionDays":0,"detailDays":1}`, 400)
+	c.want("PUT", "/api/settings", `{"show":"all","localNets":[],"privateIsLocal":true,"retentionDays":3,"detailDays":2}`, 200)
 
 	// Keeping fewer days removes the older history straight away.
 	if body := peers(); strings.Contains(body, "198.51.100.2") || !strings.Contains(body, "198.51.100.1") {
