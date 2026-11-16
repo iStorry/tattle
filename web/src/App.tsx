@@ -17,12 +17,6 @@ import { Amounts, Empty, Logo, ScopeTag, Tile } from './parts'
 import { SettingsPage } from './Settings'
 import { formatHash, RANGES, useView, type Sort, type Tab, type View } from './url'
 
-const SCOPES: { value: Scope; label: string }[] = [
-  { value: 'all', label: 'Show everything' },
-  { value: 'internet', label: 'Hide inside your network' },
-  { value: 'local', label: 'Hide internet' },
-]
-
 type Data = {
   machines: Machine[]
   timeline: Timeline
@@ -254,32 +248,24 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
                     .join(' · ')
                 : `Everything your VMs, containers and the host did on the network in the last ${rangeLabel}.`}
             </p>
-            <div className="scope" role="group" aria-label="What to show">
-              {SCOPES.map((s) => (
-                <button key={s.value} aria-pressed={scope === s.value} onClick={() => setScope(s.value)}>
-                  {s.label}
-                </button>
-              ))}
-            </div>
-            {scope !== 'all' && (
-              <p className="scope-note">
-                {scope === 'internet'
-                  ? 'Traffic that stayed inside your network is hidden from the figures, chart and lists below.'
-                  : 'Traffic to and from the internet is hidden from the figures, chart and lists below.'}
-              </p>
-            )}
           </div>
+
+          <section className="card">
+            <h2>Where the traffic went</h2>
+            <SplitBar
+              split={data.split}
+              info={info}
+              settingsHref={formatHash({ ...view, page: 'settings' })}
+              scope={scope}
+              onScope={setScope}
+            />
+          </section>
 
           <section className="tiles">
             <Tile label="Places contacted" value={count(selected ? selected.destinations : outgoing.length)} />
             <Tile label="Callers" value={count(incoming.length)} hint="Others that connected in" />
             <Tile label="Sent" value={bytes(sent)} />
             <Tile label="Received" value={bytes(received)} />
-          </section>
-
-          <section className="card">
-            <h2>Where the traffic went</h2>
-            <SplitBar split={data.split} info={info} settingsHref={formatHash({ ...view, page: 'settings' })} />
           </section>
 
           <section className="card">
@@ -338,43 +324,84 @@ function TabButton(p: { id: Tab; tab: Tab; set: (t: Tab) => void; label: string;
   )
 }
 
-function SplitBar({ split, info, settingsHref }: { split: Split; info: SettingsInfo; settingsHref: string }) {
-  const { internet, local } = split
-  const networks = [...info.detected, ...info.settings.localNets]
+/**
+ * Shows how traffic divides between the internet and the home network, and
+ * is also the control for hiding either side from the rest of the page.
+ */
+function SplitBar(p: { split: Split; info: SettingsInfo; settingsHref: string; scope: Scope; onScope: (s: Scope) => void }) {
+  const { internet, local } = p.split
+  const networks = [...p.info.detected, ...p.info.settings.localNets]
   const total = internet.bytes + local.bytes
-  if (total === 0) return <p className="empty">No traffic in this time range.</p>
-  const pct = (s: Share) => Math.round((s.bytes / total) * 100)
-  const rows = [
-    { key: 'internet', title: 'Internet', hint: 'Left or entered your home network', share: internet },
-    { key: 'local', title: 'Inside your network', hint: 'Stayed between your own devices', share: local },
+  if (total === 0 && p.scope === 'all') return <p className="empty">No traffic in this time range.</p>
+  const pct = (s: Share) => (total === 0 ? 0 : Math.round((s.bytes / total) * 100))
+  // Hiding a side means showing only the other one.
+  const sides: { key: Scope; title: string; phrase: string; hint: string; share: Share; hidden: boolean; hide: Scope }[] = [
+    {
+      key: 'internet',
+      title: 'Internet',
+      phrase: 'Traffic to and from the internet',
+      hint: 'Left or entered your home network',
+      share: internet,
+      hidden: p.scope === 'local',
+      hide: 'local',
+    },
+    {
+      key: 'local',
+      title: 'Inside your network',
+      phrase: 'Traffic that stayed inside your network',
+      hint: 'Stayed between your own devices',
+      share: local,
+      hidden: p.scope === 'internet',
+      hide: 'internet',
+    },
   ]
+  const hidden = sides.find((s) => s.hidden)
   return (
     <div className="split">
       <div className="split-bar" role="img" aria-label={`${pct(internet)}% internet, ${pct(local)}% inside your network`}>
-        {rows.map((r) => r.share.bytes > 0 && <i key={r.key} className={r.key} style={{ flexGrow: r.share.bytes }} />)}
+        {sides.map(
+          (s) => s.share.bytes > 0 && <i key={s.key} className={s.hidden ? `${s.key} off` : s.key} style={{ flexGrow: s.share.bytes }} />,
+        )}
       </div>
       <div className="split-legend">
-        {rows.map((r) => (
-          <div key={r.key}>
+        {sides.map((s) => (
+          <div key={s.key} className={s.hidden ? 'off' : undefined}>
             <span className="split-title">
-              <i className={`swatch ${r.key}`} />
-              {r.title}
+              <i className={`swatch ${s.key}`} />
+              {s.title}
+              {s.hidden && <span className="tag">Hidden</span>}
             </span>
             <strong>
-              {bytes(r.share.bytes)} <small>{pct(r.share)}%</small>
+              {bytes(s.share.bytes)} <small>{pct(s.share)}%</small>
             </strong>
             <span className="split-hint">
-              {plural(r.share.places, 'place')} · {r.hint}
+              {plural(s.share.places, 'place')} · {s.hint}
             </span>
+            {s.hidden ? (
+              <button className="toggle" aria-label={`Show ${s.phrase.toLowerCase()} again`} onClick={() => p.onScope('all')}>
+                Show it again
+              </button>
+            ) : (
+              !hidden && (
+                <button className="toggle" aria-label={`Hide ${s.phrase.toLowerCase()}`} onClick={() => p.onScope(s.hide)}>
+                  Hide this
+                </button>
+              )
+            )}
           </div>
         ))}
       </div>
+      {hidden && (
+        <p className="split-hidden" role="status">
+          {hidden.phrase} is hidden from the figures, chart and lists below.
+        </p>
+      )}
       <p className="split-note">
         Counted as your network:{' '}
-        {[...networks, ...(info.settings.privateIsLocal ? ['any private address (such as 192.168.x.x or 10.x.x.x)'] : [])].join(
+        {[...networks, ...(p.info.settings.privateIsLocal ? ['any private address (such as 192.168.x.x or 10.x.x.x)'] : [])].join(
           ', ',
         ) || 'only your own VMs and containers'}
-        . <a href={settingsHref}>Change</a>
+        . <a href={p.settingsHref}>Change</a>
       </p>
     </div>
   )

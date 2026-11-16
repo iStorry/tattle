@@ -488,16 +488,48 @@ path.sent {
   margin-top: 12px;
 }
 
-.scope {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 12px;
+.split-bar .off {
+  opacity: 0.35;
+  background-image: repeating-linear-gradient(135deg, transparent 0 4px, var(--surface) 4px 7px);
 }
 
-.scope-note {
+.split-legend .off strong,
+.split-legend .off .split-hint {
+  color: var(--text-3);
+}
+
+.split-legend .off strong {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.split-title .tag {
+  margin-left: 8px;
+}
+
+.toggle {
+  justify-self: start;
+  margin-top: 6px;
+  border: 1px solid var(--line);
+  background: none;
+  border-radius: 999px;
+  padding: 2px 11px;
   font-size: 13px;
-  margin-top: 8px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.toggle:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.split-hidden {
+  margin-top: 12px;
+  font-size: 13.5px;
+  background: var(--hover);
+  border-radius: 8px;
+  padding: 7px 11px;
 }
 
 /* Sign-in and first-time setup */
