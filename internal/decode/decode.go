@@ -54,7 +54,9 @@ type Packet struct {
 	Proto            uint8
 	SrcPort, DstPort uint16
 	TCPFlags         uint8
+	Seq              uint32 // TCP sequence number of the first payload byte
 	Payload          []byte // transport payload; may be cut short by the capture length
+	Truncated        bool   // the capture did not keep the whole frame; set by the caller
 
 	// Announce is an address that SrcMAC claims to own, taken from ARP or
 	// IPv6 neighbour discovery. It is the reliable way to learn which IP
@@ -177,6 +179,7 @@ func decodeTransport(p Packet, b []byte) Packet {
 		p.SrcPort = binary.BigEndian.Uint16(b[0:2])
 		p.DstPort = binary.BigEndian.Uint16(b[2:4])
 		p.TCPFlags = b[13]
+		p.Seq = binary.BigEndian.Uint32(b[4:8])
 		if off := int(b[12]>>4) * 4; off >= 20 && off <= len(b) {
 			p.Payload = b[off:]
 		}

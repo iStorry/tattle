@@ -187,3 +187,31 @@ func TestParseHTTPHost(t *testing.T) {
 		}
 	}
 }
+
+func TestParseClientHelloAcrossPackets(t *testing.T) {
+	// 1,800 bytes of other extensions put the name well past the first packet.
+	hello := clientHello("split.example.com", 1800)
+	if len(hello) < 1800 {
+		t.Fatalf("test hello is only %d bytes", len(hello))
+	}
+	if name, res := ParseClientHello(hello); res != HelloFound || name != "split.example.com" {
+		t.Fatalf("whole hello: %q, %v", name, res)
+	}
+	// Every shorter prefix must ask for more, never guess and never give up.
+	for cut := 1; cut < len(hello)-len("split.example.com"); cut++ {
+		if name, res := ParseClientHello(hello[:cut]); res != HelloIncomplete || name != "" {
+			t.Fatalf("prefix of %d bytes: %q, %v", cut, name, res)
+		}
+	}
+
+	noName := clientHello("x", 20)
+	noName[len(noName)-len("x")-9] = 0xff // turn the server name extension into an unknown one
+	if _, res := ParseClientHello(noName); res != HelloNone {
+		t.Errorf("complete hello without a name: %v", res)
+	}
+	for _, other := range [][]byte{nil, []byte("GET / HTTP/1.1\r\n"), {0x17, 3, 3, 0, 5, 1, 2, 3, 4, 5}, {0x16, 3, 3, 0, 5, 2, 0, 0, 1, 0}} {
+		if _, res := ParseClientHello(other); res != HelloNone {
+			t.Errorf("%x: %v", other, res)
+		}
+	}
+}

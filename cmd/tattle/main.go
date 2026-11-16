@@ -175,6 +175,7 @@ func startLive(ctx context.Context, st *store.Store, status *api.Status, ifaceFl
 			errc <- src.Run(ctx, func(frame []byte, wireLen int) {
 				status.Packets.Add(1)
 				if p, ok := decode.Decode(frame); ok {
+					p.Truncated = wireLen > len(frame)
 					tr.Handle(p, wireLen, time.Now())
 				}
 			})

@@ -100,64 +100,103 @@ func readName(msg []byte, off int) (string, int, bool) {
 	return "", 0, false
 }
 
-// ParseSNI returns the server name from a TLS ClientHello, which is sent
-// unencrypted at the start of every HTTPS connection. It tolerates a
-// ClientHello that was cut short, returning "" if the name is not in the
-// part that was captured.
-func ParseSNI(b []byte) string {
-	// Record header: type 22 (handshake), version, length.
-	if len(b) < 5 || b[0] != 0x16 || b[1] != 0x03 {
-		return ""
-	}
-	b = b[5:]
+// HelloResult says what ParseClientHello made of the bytes it was given.
+type HelloResult int
+
+const (
+	HelloNone       HelloResult = iota // not a ClientHello, or one without a server name
+	HelloFound                         // the server name was read
+	HelloIncomplete                    // a ClientHello that stops before the server name
+)
+
+// ParseClientHello reads the server name from a TLS ClientHello, which is
+// sent unencrypted at the start of every HTTPS connection.
+//
+// Modern browsers send a ClientHello too large for one packet, so the bytes
+// may be only its beginning. HelloIncomplete means the caller should append
+// the connection's next bytes and try again.
+func ParseClientHello(b []byte) (string, HelloResult) {
+	// Record header: type 22 (handshake), version 3.x, length.
 	// Handshake header: type 1 (ClientHello), 3-byte length.
-	if len(b) < 4 || b[0] != 0x01 {
-		return ""
+	if len(b) == 0 || b[0] != 0x16 {
+		return "", HelloNone
 	}
-	b = b[4:]
+	if len(b) < 9 {
+		return "", HelloIncomplete
+	}
+	if b[1] != 0x03 || b[5] != 0x01 {
+		return "", HelloNone
+	}
+	total := 9 + int(b[6])<<16 + int(b[7])<<8 + int(b[8])
+	name, ranOut := helloServerName(b[9:])
+	switch {
+	case name != "":
+		return name, HelloFound
+	case ranOut && len(b) < total:
+		return "", HelloIncomplete
+	}
+	return "", HelloNone
+}
+
+// ParseSNI returns the server name from a ClientHello, or "" if it is not
+// in the bytes given.
+func ParseSNI(b []byte) string {
+	name, _ := ParseClientHello(b)
+	return name
+}
+
+// helloServerName walks the body of a ClientHello. ranOut reports that the
+// bytes ended before the walk did.
+func helloServerName(b []byte) (name string, ranOut bool) {
 	if len(b) < 34 { // version + random
-		return ""
+		return "", true
 	}
 	b = b[34:]
 	var ok bool
 	if b, ok = skip(b, 1); !ok { // session id
-		return ""
+		return "", true
 	}
 	if b, ok = skip(b, 2); !ok { // cipher suites
-		return ""
+		return "", true
 	}
 	if b, ok = skip(b, 1); !ok { // compression methods
-		return ""
+		return "", true
 	}
 	if len(b) < 2 {
-		return ""
+		return "", true
 	}
-	b = b[2:] // extensions length; trust the bytes we actually have instead
+	extsLen := int(binary.BigEndian.Uint16(b[0:2]))
+	b = b[2:]
+	if extsLen < len(b) {
+		b = b[:extsLen]
+	}
+	seen := 0
 	for len(b) >= 4 {
 		extType := binary.BigEndian.Uint16(b[0:2])
 		extLen := int(binary.BigEndian.Uint16(b[2:4]))
 		b = b[4:]
+		seen += 4
 		if extLen > len(b) {
-			if extType != 0 {
-				return ""
-			}
-			extLen = len(b)
+			return "", true
 		}
 		if extType == 0 {
 			ext := b[:extLen]
 			// list length (2), name type (1), name length (2), name
 			if len(ext) < 5 || ext[2] != 0 {
-				return ""
+				return "", false
 			}
 			n := int(binary.BigEndian.Uint16(ext[3:5]))
 			if 5+n > len(ext) {
-				return ""
+				return "", false
 			}
-			return cleanHost(string(ext[5 : 5+n]))
+			return cleanHost(string(ext[5 : 5+n])), false
 		}
 		b = b[extLen:]
+		seen += extLen
 	}
-	return ""
+	// Leftover bytes are the start of an extension header; a clean end means
+	// every extension was read and none was the server name.
+	return "", len(b) > 0 || seen < extsLen
 }
 
 // skip steps over a field that is prefixed by a length of the given size.

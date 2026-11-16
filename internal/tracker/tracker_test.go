@@ -1,6 +1,7 @@
 package tracker
 
 import (
+	"encoding/binary"
 	"net/netip"
 	"testing"
 	"time"
@@ -165,5 +166,99 @@ func TestFlowsExpire(t *testing.T) {
 	tr.Flush(t0.Add(2 * time.Minute))
 	if len(tr.flows) != 0 {
 		t.Fatalf("flows = %d, want 0", len(tr.flows))
+	}
+}
+
+// bigHello builds a TLS ClientHello with the server name after `padding`
+// bytes of other extensions, as browsers with large key shares send.
+func bigHello(host string, padding int) []byte {
+	u16 := func(v int) []byte { return binary.BigEndian.AppendUint16(nil, uint16(v)) }
+	cat := func(parts ...[]byte) (out []byte) {
+		for _, p := range parts {
+			out = append(out, p...)
+		}
+		return out
+	}
+	sni := cat(u16(0), u16(len(host)+5), u16(len(host)+3), []byte{0}, u16(len(host)), []byte(host))
+	exts := cat(u16(0x33), u16(padding), make([]byte, padding), sni)
+	body := cat([]byte{3, 3}, make([]byte, 32), []byte{0}, u16(2), []byte{0x13, 0x01}, []byte{1, 0}, u16(len(exts)), exts)
+	hs := cat([]byte{1, 0}, u16(len(body)), body)
+	return cat([]byte{0x16, 3, 1}, u16(len(hs)), hs)
+}
+
+// sendHello delivers a hello to a fresh connection as the given byte ranges,
+// in the order listed, and returns the name the tracker settled on.
+func sendHello(t *testing.T, tr *Tracker, cport uint16, hello []byte, pieces [][2]int) string {
+	t.Helper()
+	const isn = 0xffffff00 // close to wrap-around, so sequence numbers overflow mid-hello
+	send := func(seq uint32, flags uint8, payload []byte) {
+		p := pkt(vmMAC, gateway, "192.168.1.20", "198.51.100.30", decode.ProtoTCP, cport, 443, flags, payload)
+		p.Seq = seq
+		tr.Handle(p, 60+len(payload), t0)
+	}
+	send(isn, decode.FlagSYN, nil)
+	for _, r := range pieces {
+		send(isn+1+uint32(r[0]), decode.FlagACK, hello[r[0]:r[1]])
+	}
+	return only(t, tr.Flush(t0)).Domain
+}
+
+func TestNameIsReadFromASplitHandshake(t *testing.T) {
+	hello := bigHello("split.example.com", 3600)
+	n := len(hello)
+	cases := map[string][][2]int{
+		"two packets":           {{0, 1400}, {1400, n}},
+		"three packets":         {{0, 1400}, {1400, 2800}, {2800, n}},
+		"out of order":          {{0, 1400}, {2800, n}, {1400, 2800}},
+		"first packet repeated": {{0, 1400}, {0, 1400}, {1400, 2800}, {2800, n}},
+		"overlapping repeat":    {{0, 1400}, {1000, 2800}, {2800, n}},
+		"tiny first packet":     {{0, 3}, {3, 1400}, {1400, n}},
+	}
+	port := uint16(52000)
+	for name, pieces := range cases {
+		tr := newTracker()
+		port++
+		if got := sendHello(t, tr, port, hello, pieces); got != "split.example.com" {
+			t.Errorf("%s: name = %q", name, got)
+		}
+		if tr.hellos != 0 {
+			t.Errorf("%s: %d handshakes still buffered", name, tr.hellos)
+		}
+	}
+}
+
+func TestSplitHandshakeGivesUpCleanly(t *testing.T) {
+	hello := bigHello("split.example.com", 3600)
+
+	// The rest never arrives: the buffer is released when the connection is.
+	tr := newTracker()
+	if got := sendHello(t, tr, 53000, hello, [][2]int{{0, 1400}}); got != "" {
+		t.Errorf("partial hello produced %q", got)
+	}
+	if tr.hellos != 1 {
+		t.Fatalf("hellos = %d, want 1", tr.hellos)
+	}
+	tr.Flush(t0.Add(10 * time.Minute))
+	if tr.hellos != 0 || len(tr.flows) != 0 {
+		t.Errorf("after expiry: hellos = %d, flows = %d", tr.hellos, len(tr.flows))
+	}
+
+	// A frame the capture cut short leaves a hole, so joining is not attempted.
+	tr = newTracker()
+	p := pkt(vmMAC, gateway, "192.168.1.20", "198.51.100.30", decode.ProtoTCP, 53001, 443, decode.FlagACK, hello[:1400])
+	p.Truncated = true
+	tr.Handle(p, 9000, t0)
+	if tr.hellos != 0 {
+		t.Errorf("buffered a truncated frame")
+	}
+
+	// Many connections that never finish cannot grow memory without limit.
+	tr = newTracker()
+	for i := 0; i < maxHellosAtOnce+50; i++ {
+		p := pkt(vmMAC, gateway, "192.168.1.20", "198.51.100.30", decode.ProtoTCP, uint16(1024+i), 443, decode.FlagACK, hello[:1400])
+		tr.Handle(p, 1460, t0)
+	}
+	if tr.hellos != maxHellosAtOnce {
+		t.Errorf("hellos = %d, want the cap %d", tr.hellos, maxHellosAtOnce)
 	}
 }

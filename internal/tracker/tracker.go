@@ -19,6 +19,12 @@ const (
 	otherIdle    = 60 * time.Second
 	closeLinger  = 5 * time.Second
 	sniffPackets = 6 // client packets inspected for a hostname before giving up
+
+	// Limits on joining a ClientHello that spans several packets.
+	maxHelloBytes    = 16 << 10
+	maxHelloSegments = 12
+	maxHelloPending  = 4
+	maxHellosAtOnce  = 4096 // across all connections, so a flood cannot use much memory
 )
 
 type flowKey struct {
@@ -32,6 +38,7 @@ type flow struct {
 	domain               string
 	named                bool // domain came from the connection itself, not from DNS
 	sniffed              int
+	hello                *helloBuf // a ClientHello still being joined together, if any
 	closing              bool
 	isNew                bool
 	last                 time.Time
@@ -43,10 +50,73 @@ type flow struct {
 
 type addrPair struct{ client, server netip.Addr }
 
+// helloBuf joins the first packets of a connection in order, so a server
+// name that falls in the second or third packet can still be read.
+type helloBuf struct {
+	start   uint32 // sequence number of data[0]
+	data    []byte
+	pending []helloSeg // packets that arrived ahead of a gap
+	segs    int
+}
+
+type helloSeg struct {
+	seq  uint32
+	data []byte
+}
+
+func newHello(seq uint32, first []byte) *helloBuf {
+	return &helloBuf{start: seq, data: append([]byte(nil), first...), segs: 1}
+}
+
+// place adds a packet's bytes if they continue the data, and reports
+// whether they were at or before the end of it (so not waiting on a gap).
+func (h *helloBuf) place(seq uint32, data []byte) bool {
+	off := int(int32(seq - h.start)) // signed, so sequence wrap-around works
+	if off > len(h.data) {
+		return false
+	}
+	if end := off + len(data); off >= 0 && end > len(h.data) {
+		h.data = append(h.data, data[len(h.data)-off:]...)
+	}
+	return true // a retransmission adds nothing
+}
+
+// add takes the connection's next client packet. done reports that no more
+// packets are wanted, either because the name was found or it never will be.
+func (h *helloBuf) add(seq uint32, data []byte, truncated bool) (name string, done bool) {
+	h.segs++
+	if !h.place(seq, data) {
+		if len(h.pending) >= maxHelloPending {
+			return "", true
+		}
+		h.pending = append(h.pending, helloSeg{seq, append([]byte(nil), data...)})
+	}
+	for placed := true; placed; {
+		placed = false
+		for i, s := range h.pending {
+			if h.place(s.seq, s.data) {
+				h.pending = append(h.pending[:i], h.pending[i+1:]...)
+				placed = true
+				break
+			}
+		}
+	}
+	name, res := decode.ParseClientHello(h.data)
+	switch {
+	case res == decode.HelloFound:
+		return name, true
+	case res == decode.HelloNone:
+		return "", true
+	}
+	// A cut-short frame leaves a hole that later packets cannot fill.
+	return "", truncated || len(h.data) > maxHelloBytes || h.segs >= maxHelloSegments
+}
+
 // Tracker is safe for concurrent use by several capture goroutines.
 type Tracker struct {
-	mu    sync.Mutex
-	flows map[flowKey]*flow
+	mu     sync.Mutex
+	flows  map[flowKey]*flow
+	hellos int // connections currently joining a ClientHello
 
 	macOwner map[decode.MAC]string   // MAC -> machine id
 	ipOwner  map[netip.Addr]string   // address -> machine id
@@ -223,16 +293,37 @@ func (t *Tracker) Handle(p decode.Packet, wireLen int, now time.Time) {
 		}
 		// The hostname is in the first data the client sends: the TLS
 		// ClientHello for HTTPS, or the Host header for plain HTTP.
-		if fromClient && !f.named && f.sniffed < sniffPackets && len(p.Payload) > 0 {
-			f.sniffed++
-			name := decode.ParseSNI(p.Payload)
-			if name == "" {
-				name = decode.ParseHTTPHost(p.Payload)
+		if fromClient && !f.named && len(p.Payload) > 0 {
+			name := ""
+			switch {
+			case f.hello != nil:
+				var done bool
+				if name, done = f.hello.add(p.Seq, p.Payload, p.Truncated); done {
+					t.dropHello(f)
+				}
+			case f.sniffed < sniffPackets:
+				f.sniffed++
+				var res decode.HelloResult
+				name, res = decode.ParseClientHello(p.Payload)
+				switch {
+				case res == decode.HelloIncomplete && !p.Truncated && t.hellos < maxHellosAtOnce:
+					f.hello = newHello(p.Seq, p.Payload)
+					t.hellos++
+				case res == decode.HelloNone:
+					name = decode.ParseHTTPHost(p.Payload)
+				}
 			}
 			if name != "" {
 				f.domain, f.named = name, true
 			}
 		}
+	}
+}
+
+func (t *Tracker) dropHello(f *flow) {
+	if f.hello != nil {
+		f.hello = nil
+		t.hellos--
 	}
 }
 
@@ -339,6 +430,7 @@ func (t *Tracker) Flush(now time.Time) []model.FlowDelta {
 			}
 		}
 		if now.Sub(f.last) > idle {
+			t.dropHello(f)
 			delete(t.flows, k)
 		}
 	}
