@@ -79,6 +79,9 @@ const SERVICES: Record<string, Service> = {
   '2049/tcp': { label: 'File sharing (NFS)' },
   '3306/tcp': { label: 'Database (MySQL)' },
   '3389/tcp': { label: 'Remote desktop' },
+  // Video calls and VPNs like Tailscale ask these servers for their own
+  // public address, often many of them at once to find the fastest.
+  '3478/udp': { label: 'Finding a direct path (STUN)' },
   '5353/udp': { label: 'Local device discovery' },
   '5432/tcp': { label: 'Database (PostgreSQL)' },
   '6379/tcp': { label: 'Database (Redis)' },
@@ -89,6 +92,7 @@ const SERVICES: Record<string, Service> = {
   '8883/tcp': { label: 'Smart-home messages (MQTT)' },
   '27017/tcp': { label: 'Database (MongoDB)' },
   '32400/tcp': { label: 'Plex' },
+  '41641/udp': { label: 'VPN (Tailscale)' },
   '51820/udp': { label: 'VPN (WireGuard)' },
 }
 

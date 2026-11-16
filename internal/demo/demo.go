@@ -48,6 +48,11 @@ const (
 	hostIP  = "192.168.1.10"
 )
 
+// stun is one relay a VPN asks for its public address.
+func stun(ip string) dest {
+	return dest{ip: ip, port: 3478, proto: "udp", up: 82, down: 74, weight: 0.2}
+}
+
 func lab() []machine {
 	dns := dest{ip: pihole, serverID: "ct-200", port: 53, proto: "udp", up: 90, down: 180, weight: 0.9}
 	ntp := dest{domain: "time.cloudflare.com", ip: "203.0.113.123", port: 123, proto: "udp", up: 90, down: 90, weight: 0.05}
@@ -88,6 +93,10 @@ func lab() []machine {
 				{domain: "", ip: nas, serverID: "vm-103", port: 2049, proto: "tcp", up: 250_000, down: 1_800_000, weight: 0.5},
 				{domain: "telemetry.example-app.io", ip: "203.0.113.200", port: 80, proto: "tcp", up: 3_400, down: 500, weight: 0.12},
 				{domain: "updates.new-plugin.example", ip: "203.0.113.210", port: 443, proto: "tcp", up: 2_800, down: 190_000, weight: 0.5, fresh: 25 * time.Minute},
+				// A VPN like Tailscale timing each of its relays: many nameless
+				// addresses, one tiny exchange each. The dashboard folds them.
+				stun("192.0.2.11"), stun("192.0.2.12"), stun("192.0.2.13"), stun("192.0.2.14"),
+				stun("192.0.2.140"), stun("192.0.2.141"), stun("192.0.2.142"), stun("192.0.2.143"),
 			},
 			inbound: []dest{{ip: laptop, port: 22, proto: "tcp", up: 30_000, down: 70_000, weight: 0.04}},
 		},
@@ -273,6 +282,8 @@ func Owners() *owners.Table {
 	table, err := owners.Parse(strings.NewReader(
 		"1.1.1.0\t1.1.1.255\t13335\tUS\tCLOUDFLARENET - Cloudflare, Inc.\n" +
 			"9.9.9.0\t9.9.9.255\t19281\tUS\tQUAD9-AS-1 - Quad9\n" +
+			"192.0.2.0\t192.0.2.127\t64503\tUS\tEXAMPLE-RELAY - Example Relay Networks\n" +
+			"192.0.2.128\t192.0.2.255\t64504\tDE\tEXAMPLE-HOST - Example Hosting GmbH\n" +
 			"198.51.100.0\t198.51.100.255\t64500\tUS\tEXAMPLE-CLOUD - Example Cloud Hosting\n" +
 			"203.0.113.0\t203.0.113.127\t64501\tDE\tEXAMPLE-TELECOM - Example Telecom GmbH\n" +
 			"203.0.113.128\t203.0.113.255\t64502\tNL\tEXAMPLE-CDN - Example Content Delivery B.V.\n"))
