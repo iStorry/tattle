@@ -317,7 +317,7 @@ func TestOwnersAreAttachedToInternetAddresses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv.SetOwners(table)
+	srv.SetOwners(table, time.Time{})
 
 	body := c.want("GET", "/api/peers", "", 200)
 	if !strings.Contains(body, `"owner":{"name":"Cloudflare, Inc.","asn":13335,"country":"US"}`) {

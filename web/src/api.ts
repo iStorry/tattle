@@ -10,6 +10,7 @@ export type Status = {
   packets: number
   dropped: number
   ownerRanges: number
+  health: HealthState
 }
 
 export type Scope = 'all' | 'internet' | 'local'
@@ -65,6 +66,22 @@ export type Peer = {
   conns: number
   firstSeen: number
   lastSeen: number
+}
+
+export type HealthState = 'ok' | 'off' | 'warn' | 'bad'
+
+export type Health = {
+  state: HealthState // the worst of the checks
+  version: string
+  uptime: string
+  checks: {
+    id: string
+    title: string
+    state: HealthState
+    summary: string
+    advice: string // what to do about it, or ''
+    facts: { label: string; value: string }[]
+  }[]
 }
 
 /** The network an internet address belongs to. */
@@ -205,6 +222,7 @@ export const api = {
   peer: (range: number, direction: 'out' | 'in', name: string, machine: string) =>
     get<PeerDetail>('/api/peer', { range, direction, name, machine }),
   split: (range: number, machine: string) => get<Split>('/api/split', { range, machine }),
+  health: () => get<Health>('/api/health'),
   devices: () => get<Device[]>('/api/devices'),
   nameDevice: async (ip: string, name: string): Promise<Device[]> =>
     (await send('PUT', '/api/devices', { ip, name })).json() as Promise<Device[]>,

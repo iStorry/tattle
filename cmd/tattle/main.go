@@ -92,7 +92,11 @@ func run(o options) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	status := &api.Status{Version: version, Demo: o.demo, Started: time.Now(), Interfaces: []string{}}
+	status := &api.Status{Version: version, Demo: o.demo, Started: time.Now(), Interfaces: []string{},
+		PVEDir: o.pveDir, OwnersPath: o.ipData}
+	if !o.demo {
+		status.DBPath = o.dbPath
+	}
 	errc := make(chan error, 8)
 	if o.demo {
 		status.LocalNets = []netip.Prefix{netip.MustParsePrefix("192.168.1.0/24")}
@@ -107,6 +111,9 @@ func run(o options) error {
 	if !o.plainHTTP {
 		if certs, err = loadCerts(o); err != nil {
 			return err
+		}
+		status.Cert = func() api.CertInfo {
+			return api.CertInfo{Generated: certs.Generated(), Expires: certs.Expires(), Fingerprint: certs.Fingerprint()}
 		}
 	}
 
@@ -133,7 +140,7 @@ func run(o options) error {
 	}
 	handler := api.New(st, status, ui.Files(), o.requireLogin)
 	if o.demo {
-		handler.SetOwners(demo.Owners())
+		handler.SetOwners(demo.Owners(), time.Time{})
 	} else {
 		// Read in the background: it takes a moment and nothing depends on it.
 		go func() {
@@ -144,7 +151,11 @@ func run(o options) error {
 			case err != nil:
 				log.Printf("reading the address-owner table: %v", err)
 			default:
-				handler.SetOwners(table)
+				var dated time.Time
+				if info, err := os.Stat(o.ipData); err == nil {
+					dated = info.ModTime()
+				}
+				handler.SetOwners(table, dated)
 				// Reading the table leaves several times its size in
 				// scratch memory; hand that back now, not eventually.
 				debug.FreeOSMemory()
@@ -272,6 +283,15 @@ func startLive(ctx context.Context, st *store.Store, status *api.Status, ifaceFl
 		if err != nil {
 			log.Printf("could not read VM and container names: %v", err)
 		}
+		vms, cts := 0, 0
+		for _, m := range machines {
+			if m.Kind == "vm" {
+				vms++
+			} else {
+				cts++
+			}
+		}
+		status.SetMachines(vms, cts, err)
 		machines = append([]model.Machine{hostMachine(names)}, machines...)
 		tr.SetMachines(machines)
 		learned := tr.MachineIPs()
@@ -290,10 +310,12 @@ func startLive(ctx context.Context, st *store.Store, status *api.Status, ifaceFl
 		go func() {
 			errc <- src.Run(ctx, func(frame []byte, wireLen int) {
 				status.Packets.Add(1)
+				now := time.Now()
+				status.LastPacket.Store(now.UnixMilli())
 				if p, ok := decode.Decode(frame); ok {
 					p.Truncated = wireLen > len(frame)
 					p.Iface = i
-					tr.Handle(p, wireLen, time.Now())
+					tr.Handle(p, wireLen, now)
 				}
 			})
 		}()
@@ -315,7 +337,9 @@ func startLive(ctx context.Context, st *store.Store, status *api.Status, ifaceFl
 			}
 			if err := st.Tidy(now, settings); err != nil {
 				log.Printf("tidying history: %v", err)
+				return
 			}
+			status.LastTidy.Store(now.UnixMilli())
 		}
 		tidy(time.Now())
 		for {

@@ -59,6 +59,10 @@ journalctl -u tattle | grep "setup code" | tail -1
       "Demo data". "Sign out" returns to a sign-in page, and the password
       gets you back in.
 
+- [ ] **1d.** The Health page says "Everything is working", or names what
+      is not. Note anything it reports that you believe is wrong, in either
+      direction.
+
 If the service fails to start, run `tattle` directly in a terminal on the
 host instead and carry on. Send the service error; the hardening options in
 the service file are the likely cause and have never been tested.
@@ -215,7 +219,8 @@ ip -br link
 grep -vE '^\s*(#|$)' /etc/network/interfaces
 ```
 
-A screenshot of the dashboard helps for anything that looked wrong.
+A screenshot of the Health page, and of the dashboard for anything that
+looked wrong.
 
 ## Remove Tattle
 

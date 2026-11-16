@@ -30,6 +30,41 @@ type Status struct {
 	LocalNets []netip.Prefix
 	Packets   atomic.Uint64
 	Dropped   atomic.Uint64
+
+	// The rest is for the health page.
+	LastPacket atomic.Int64 // unix milliseconds
+	LastTidy   atomic.Int64 // unix milliseconds
+	DBPath     string       // "" when history is kept in memory
+	PVEDir     string
+	OwnersPath string
+	// Cert reports the HTTPS certificate in use; nil when serving plain HTTP.
+	Cert func() CertInfo
+
+	mu    sync.Mutex
+	found machinesFound
+}
+
+// machinesFound is the outcome of the last look for VMs and containers.
+type machinesFound struct {
+	vms, cts int
+	at       time.Time
+	err      string
+}
+
+// SetMachines records the outcome of looking for VMs and containers.
+func (s *Status) SetMachines(vms, cts int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.found = machinesFound{vms: vms, cts: cts, at: time.Now()}
+	if err != nil {
+		s.found.err = err.Error()
+	}
+}
+
+func (s *Status) machines() machinesFound {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.found
 }
 
 type Server struct {
@@ -39,7 +74,8 @@ type Server struct {
 	mux    *http.ServeMux
 	// owners says whose an internet address is. It is nil until the table
 	// has been loaded, and stays nil if there is none.
-	owners atomic.Pointer[owners.Table]
+	owners      atomic.Pointer[owners.Table]
+	ownersDated atomic.Int64 // when the table's file was written, unix milliseconds
 
 	mu       sync.Mutex
 	settings store.Settings
@@ -65,6 +101,7 @@ func New(st *store.Store, status *Status, ui fs.FS, requireLogin bool) *Server {
 	s.mux.HandleFunc("PUT /api/settings", s.handlePutSettings)
 	s.mux.HandleFunc("GET /api/split", s.handleSplit)
 	s.mux.HandleFunc("GET /api/status", s.handleStatus)
+	s.mux.HandleFunc("GET /api/health", s.handleHealth)
 	s.mux.HandleFunc("GET /api/machines", s.handleMachines)
 	s.mux.HandleFunc("GET /api/timeline", s.handleTimeline)
 	s.mux.HandleFunc("GET /api/peers", s.handlePeers)
@@ -99,8 +136,14 @@ var openPaths = map[string]bool{
 	"/api/auth/logout": true,
 }
 
-// SetOwners provides the table used to say whose an address is.
-func (s *Server) SetOwners(t *owners.Table) { s.owners.Store(t) }
+// SetOwners provides the table used to say whose an address is, and when
+// it dates from (zero if unknown).
+func (s *Server) SetOwners(t *owners.Table, dated time.Time) {
+	s.owners.Store(t)
+	if !dated.IsZero() {
+		s.ownersDated.Store(dated.UnixMilli())
+	}
+}
 
 // ownerOf returns the network an internet address belongs to, if known.
 // Addresses inside the home network have no owner to look up.
@@ -184,6 +227,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"packets":       s.status.Packets.Load(),
 		"dropped":       s.status.Dropped.Load(),
 		"ownerRanges":   s.owners.Load().Len(),
+		"health":        s.health(r.Context(), time.Now()).State,
 	}, nil)
 }
 

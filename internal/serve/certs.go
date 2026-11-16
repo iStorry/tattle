@@ -206,6 +206,13 @@ func (c *Certs) refresh() {
 // Generated reports whether Tattle made the certificate itself.
 func (c *Certs) Generated() bool { return c.generated }
 
+// Expires is when the certificate in use stops being valid.
+func (c *Certs) Expires() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.cert.Leaf.NotAfter
+}
+
 // Fingerprint is the SHA-256 fingerprint browsers show for the certificate,
 // so the owner can check that the warning is about the right one.
 func (c *Certs) Fingerprint() string {

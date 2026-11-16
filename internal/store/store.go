@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -54,7 +55,10 @@ CREATE TABLE IF NOT EXISTS sessions (
 ) WITHOUT ROWID;
 `
 
-type Store struct{ db *sql.DB }
+type Store struct {
+	db   *sql.DB
+	path string // "" for an in-memory database
+}
 
 // Open opens the database at path, creating it if needed. An empty path
 // keeps everything in memory, which demo mode uses.
@@ -78,10 +82,30 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("preparing database %s: %w", path, err)
 	}
-	return &Store{db: db}, nil
+	return &Store{db: db, path: path}, nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }
+
+// Size is how much disk the database uses, in bytes; 0 when it is in memory.
+func (s *Store) Size() int64 {
+	var total int64
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		if fi, err := os.Stat(s.path + suffix); err == nil && s.path != "" {
+			total += fi.Size()
+		}
+	}
+	return total
+}
+
+// Oldest is the time of the earliest traffic still kept; zero if there is none.
+func (s *Store) Oldest(ctx context.Context) (time.Time, error) {
+	var bucket sql.NullInt64
+	if err := s.db.QueryRowContext(ctx, `SELECT MIN(bucket) FROM flows`).Scan(&bucket); err != nil || !bucket.Valid {
+		return time.Time{}, err
+	}
+	return time.Unix(bucket.Int64, 0), nil
+}
 
 // Apply adds traffic totals to the history.
 func (s *Store) Apply(deltas []model.FlowDelta) error {

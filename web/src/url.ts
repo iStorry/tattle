@@ -6,6 +6,7 @@ import type { Scope } from './api'
 //   #/?machine=vm-100&range=24h&tab=in&show=internet&sort=data&q=docker
 //   #/?peer=api.github.com&range=24h
 //   #/settings
+//   #/health
 //
 // so a view can be bookmarked or sent to someone, a reload keeps it, and
 // the browser's back button steps through what was looked at.
@@ -25,7 +26,7 @@ export const RANGES = [
 const DEFAULT_RANGE = RANGES[1]
 
 export type View = {
-  page: 'dashboard' | 'settings'
+  page: 'dashboard' | 'settings' | 'health'
   machine: string // a machine ID, or '' for all machines
   range: number // seconds
   tab: Tab
@@ -46,7 +47,7 @@ export function parseHash(hash: string): View {
   const p = new URLSearchParams(query)
   const show = p.get('show')
   return {
-    page: path === '/settings' ? 'settings' : 'dashboard',
+    page: path === '/settings' ? 'settings' : path === '/health' ? 'health' : 'dashboard',
     machine: p.get('machine') ?? '',
     range: (RANGES.find((r) => r.key === p.get('range')) ?? DEFAULT_RANGE).seconds,
     tab: oneOf(p.get('tab'), ['out', 'in'], 'out'),
@@ -72,7 +73,7 @@ export function formatHash(v: View): string {
     if (v.dir !== 'out') p.set('dir', v.dir)
   }
   const query = p.toString()
-  return `#${v.page === 'settings' ? '/settings' : '/'}${query ? `?${query}` : ''}`
+  return `#${v.page === 'dashboard' ? '/' : `/${v.page}`}${query ? `?${query}` : ''}`
 }
 
 /**

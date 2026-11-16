@@ -17,6 +17,7 @@ import {
 import { Spark, TrafficChart } from './Chart'
 import { ago, bytes, count, KIND_LABEL, plural, service, YOURS_LABEL } from './format'
 import { PeerPage } from './Detail'
+import { HealthPage, StateBadge } from './Health'
 import { WhatsNew } from './News'
 import { Amounts, Empty, Logo, ScopeTag, Tile } from './parts'
 import { SettingsPage } from './Settings'
@@ -149,7 +150,7 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
   // A destination that is one of the owner's machines is titled by its name.
   const peerMachine = data?.machines.find((m) => m.ips.includes(view.peer))
   const peerName = peerMachine?.name || (data && deviceLabel(data.devices, view.peer)) || view.peer
-  const pageTitle = route === 'settings' ? 'Settings' : peerName || (selected?.name ?? '')
+  const pageTitle = route === 'settings' ? 'Settings' : route === 'health' ? 'Health' : peerName || (selected?.name ?? '')
   useEffect(() => {
     document.title = pageTitle ? `${pageTitle} · Tattle` : 'Tattle'
   }, [pageTitle])
@@ -205,9 +206,23 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
             ))}
           </div>
         )}
-        <a className="nav-link" href={formatHash({ ...view, page: route === 'settings' ? 'dashboard' : 'settings' })}>
-          {route === 'settings' ? 'Dashboard' : 'Settings'}
-        </a>
+        {route !== 'dashboard' && (
+          <a className="nav-link" href={formatHash({ ...view, page: 'dashboard' })}>
+            Dashboard
+          </a>
+        )}
+        {route !== 'health' && (
+          <a className="nav-link health-link" href={formatHash({ ...view, page: 'health' })}>
+            Health
+            {/* Only speaks up when something needs attention. */}
+            {(status.health === 'warn' || status.health === 'bad') && <StateBadge state={status.health} />}
+          </a>
+        )}
+        {route !== 'settings' && (
+          <a className="nav-link" href={formatHash({ ...view, page: 'settings' })}>
+            Settings
+          </a>
+        )}
         {canSignOut && (
           <button className="nav-link" onClick={onSignOut}>
             Sign out
@@ -222,7 +237,9 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
         </p>
       )}
 
-      {route === 'settings' ? (
+      {route === 'health' ? (
+        <HealthPage backHref={formatHash({ ...view, page: 'dashboard' })} />
+      ) : route === 'settings' ? (
         <SettingsPage
           info={info}
           canChangePassword={canSignOut}

@@ -13,6 +13,10 @@
   /* Chart series: received and sent keep these colours everywhere. */
   --received: #2a78d6;
   --sent: #eb6834;
+  --good-bg: #e2f4e2;
+  --good-text: #0a5c0a;
+  --bad-bg: #fbe3e3;
+  --bad-text: #8f1c1c;
   --internet: #1baf7a;
   --internet-bg: #dff4ea;
   --internet-text: #0b5c3f;
@@ -37,6 +41,10 @@
     --warn-text: #f4b78e;
     --received: #3987e5;
     --sent: #d95926;
+    --good-bg: #12320f;
+    --good-text: #8fdc8f;
+    --bad-bg: #401616;
+    --bad-text: #f3a3a3;
     --internet: #199e70;
     --internet-bg: #123527;
     --internet-text: #8fe0bd;
@@ -582,6 +590,113 @@ path.sent {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 8px 10px;
+}
+
+/* Health */
+
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 999px;
+  padding: 2px 10px 2px 4px;
+  font-size: 12.5px;
+  font-weight: 550;
+  white-space: nowrap;
+  background: var(--hover);
+  color: var(--text-2);
+}
+
+.state i {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 700;
+  /* A disc in the badge's text colour, with the symbol cut out in the surface colour. */
+  background: currentColor;
+  -webkit-text-fill-color: var(--surface);
+}
+
+
+.state.ok {
+  background: var(--good-bg);
+  color: var(--good-text);
+}
+
+.state.warn {
+  background: var(--warn-bg);
+  color: var(--warn-text);
+}
+
+.state.bad {
+  background: var(--bad-bg);
+  color: var(--bad-text);
+}
+
+.health-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.verdict {
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-weight: 550;
+  background: var(--good-bg);
+  color: var(--good-text);
+}
+
+.verdict.warn {
+  background: var(--warn-bg);
+  color: var(--warn-text);
+}
+
+.verdict.bad {
+  background: var(--bad-bg);
+  color: var(--bad-text);
+}
+
+.settings .health-check {
+  gap: 10px;
+}
+
+.health-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.advice {
+  background: var(--hover);
+  border-radius: 8px;
+  padding: 8px 11px;
+  font-size: 14px;
+}
+
+.health-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 10px 24px;
+  margin: 4px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.health-facts dt {
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+.health-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Settings */

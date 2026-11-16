@@ -87,6 +87,14 @@ tattle --http --listen 127.0.0.1:8477
 With `--http`, passwords are only as protected as the connection in front
 of Tattle.
 
+## Is it working?
+
+The Health link in the dashboard checks, in plain words, that Tattle is
+capturing traffic, has found your VMs and containers, has room to keep
+history, and is serving the dashboard securely. When something needs
+attention the link says so from every page, and the Health page says what to
+do about it.
+
 ## Settings
 
 The Settings link in the dashboard controls:
