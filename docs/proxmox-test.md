@@ -11,25 +11,25 @@ last section removes it completely.
 
 ## 1. Install
 
-Until there is a release to download, build the package on your computer.
-`make deb` needs Debian or Ubuntu; on a Mac, use the container form:
+Download the package from the release candidate. On your computer, signed
+in to GitHub with `gh`:
 
 ```bash
-make linux data
+gh release download v0.1.0-rc1 --repo istorry/tattle --pattern '*amd64.deb' --pattern SHA256SUMS
 ```
 
 ```bash
-docker run --rm -v "$PWD:/src" -w /src debian:12 packaging/build-deb.sh 0.1.0~test amd64
+shasum -a 256 -c SHA256SUMS --ignore-missing
 ```
 
 Copy it to the host and install it there:
 
 ```bash
-scp "dist/tattle_0.1.0~test_amd64.deb" root@your-proxmox:/root/
+scp tattle_0.1.0-rc1_amd64.deb root@your-proxmox:/root/
 ```
 
 ```bash
-apt install "/root/tattle_0.1.0~test_amd64.deb"
+apt install /root/tattle_0.1.0-rc1_amd64.deb
 ```
 
 ```bash
