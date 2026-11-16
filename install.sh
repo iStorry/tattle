@@ -5,7 +5,7 @@
 #
 # It downloads the package for this machine from Tattle's GitHub releases,
 # checks it against the published checksums, and installs it with apt. It
-# changes nothing else. To remove Tattle afterwards: apt purge tattle
+# changes nothing else. uninstall.sh, beside this script, removes it again.
 #
 # Settings, all optional, given as environment variables:
 #

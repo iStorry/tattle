@@ -79,10 +79,16 @@ releases page beside it and run `sha256sum -c SHA256SUMS --ignore-missing`.
   History, settings and the password are kept.
 - **A particular release,** including a pre-release: put
   `TATTLE_VERSION=v0.1.0` in front of `bash` in the install command.
-- **Remove:** `apt remove tattle` stops and removes it but keeps the history,
-  so reinstalling carries on where it left off.
-- **Remove everything:** `apt purge tattle` also deletes the history, the
-  password and the certificate.
+- **Remove:** run the uninstaller. It stops and removes Tattle, then asks
+  whether to delete the history, the password and the certificate too.
+  Keeping them means reinstalling carries on where it left off.
+
+  ```bash
+  bash -c "$(curl -fsSL https://raw.githubusercontent.com/istorry/tattle/main/uninstall.sh)"
+  ```
+
+  Without the script, `apt remove tattle` removes it and keeps those, and
+  `apt purge tattle` deletes them as well.
 
 ## Try it without Proxmox
 

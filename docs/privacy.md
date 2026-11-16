@@ -59,7 +59,8 @@ the packet.
 
 You choose, in Settings. By default, 90 days: the most recent 7 minute by
 minute, and the rest as one total per hour. Shortening either period deletes
-the older data straight away. `apt purge tattle` deletes everything.
+the older data straight away. Removing Tattle with `uninstall.sh` and
+answering yes, or `apt purge tattle`, deletes everything.
 
 ## What leaves the host
 
