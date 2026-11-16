@@ -1,0 +1,24 @@
+[Unit]
+Description=Tattle - see what your Proxmox machines are talking to
+After=network-online.target pve-cluster.service
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/tattle
+# Uncomment to require a password (any username) for the dashboard.
+#Environment=TATTLE_PASSWORD=change-me
+StateDirectory=tattle
+Restart=on-failure
+RestartSec=5
+
+# Tattle needs to capture packets and read /etc/pve, and nothing else.
+CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN CAP_DAC_READ_SEARCH
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target
