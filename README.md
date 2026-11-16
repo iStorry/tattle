@@ -213,11 +213,6 @@ takes a small fraction of the space.
 
 ## Known limitations
 
-- **Not yet run on a real Proxmox host.** Everything has been tested on
-  Linux with bridges and guests wired the way Proxmox wires them, and the
-  package under systemd on Debian, but not on Proxmox itself.
-  [docs/proxmox-test.md](docs/proxmox-test.md) is the checklist for that
-  first run.
 - **Device names belong to an address, not to the device.** If your router
   hands a named device's address to a different device, the name moves with
   the address until the device announces itself again or you rename it.
@@ -233,8 +228,7 @@ takes a small fraction of the space.
 - [CONTRIBUTING.md](CONTRIBUTING.md) covers building, testing and the layout
   of the code.
 - [SECURITY.md](SECURITY.md) says how to report a vulnerability privately.
-- [CHANGELOG.md](CHANGELOG.md) lists what changed in each release, and
-  [ROADMAP.md](ROADMAP.md) what is planned.
+- [CHANGELOG.md](CHANGELOG.md) lists what changed in each release.
 
 ## Licence
 

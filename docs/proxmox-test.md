@@ -1,7 +1,7 @@
 # Testing Tattle on a real Proxmox host
 
 Tattle has so far only run against a simulated bridge. This checklist is the
-first run on real hardware (roadmap step 2). It takes about 30 minutes.
+first run on real hardware. It takes about 30 minutes.
 
 For each check, note **pass**, **fail**, or **could not test**. For a fail,
 note what you expected and what the dashboard showed.
@@ -182,8 +182,7 @@ systemctl restart tattle
 
 ## 9. Expected gaps
 
-These are known and already on the roadmap. Note them only if they are worse
-than described.
+These are known. Note them only if they are worse than described.
 
 - Docker containers inside a VM appear as the VM.
 

@@ -51,6 +51,5 @@ This will be the first release, 0.1.0.
 
 ### Known gaps
 
-- Not yet run on a real Proxmox host.
 - Capture has not been measured at high traffic rates.
 - The service runs as root.

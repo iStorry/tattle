@@ -19,7 +19,7 @@ things follow from that, and most review comments come back to them:
 
 It is also deliberately a viewer. Blocking traffic, decrypting HTTPS,
 downloading packets, user roles, cloud accounts and telemetry are out of
-scope; [ROADMAP.md](ROADMAP.md) lists what is planned.
+scope.
 
 ## Building
 
