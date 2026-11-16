@@ -167,7 +167,8 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
       p.name.toLowerCase().includes(q) ||
       p.ip.includes(q) ||
       (names.get(p.peerId)?.name.toLowerCase().includes(q) ?? false) ||
-      deviceLabel(data.devices, p.ip).toLowerCase().includes(q)
+      deviceLabel(data.devices, p.ip).toLowerCase().includes(q) ||
+      (p.owner?.name.toLowerCase().includes(q) ?? false)
     )
   }
   const order = (a: Peer, b: Peer) =>
@@ -483,6 +484,8 @@ function PeerList(p: {
                   .join(', ')}
                 {services.length > 3 && ` and ${services.length - 3} more`}
                 {other || device || peer.name !== peer.ip ? ` · ${peer.ip}` : ''}
+                {/* Whose it is stands in for a name when all there is is an address. */}
+                {peer.name === peer.ip && peer.owner && ` · ${peer.owner.name}`}
                 {peer.ipCount > 1 && ` and ${peer.ipCount - 1} more`}
               </span>
               {p.showMachines && (

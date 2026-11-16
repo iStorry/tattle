@@ -6,9 +6,11 @@ import (
 	"context"
 	"fmt"
 	"math/rand/v2"
+	"strings"
 	"time"
 
 	"github.com/istorry/tattle/internal/model"
+	"github.com/istorry/tattle/internal/owners"
 	"github.com/istorry/tattle/internal/store"
 )
 
@@ -242,4 +244,19 @@ func Run(ctx context.Context, st *store.Store) error {
 			}
 		}
 	}
+}
+
+// Owners is a made-up table of who owns the demo's internet addresses, in
+// the same format as the real one.
+func Owners() *owners.Table {
+	table, err := owners.Parse(strings.NewReader(
+		"1.1.1.0\t1.1.1.255\t13335\tUS\tCLOUDFLARENET - Cloudflare, Inc.\n" +
+			"9.9.9.0\t9.9.9.255\t19281\tUS\tQUAD9-AS-1 - Quad9\n" +
+			"198.51.100.0\t198.51.100.255\t64500\tUS\tEXAMPLE-CLOUD - Example Cloud Hosting\n" +
+			"203.0.113.0\t203.0.113.127\t64501\tDE\tEXAMPLE-TELECOM - Example Telecom GmbH\n" +
+			"203.0.113.128\t203.0.113.255\t64502\tNL\tEXAMPLE-CDN - Example Content Delivery B.V.\n"))
+	if err != nil {
+		panic(err)
+	}
+	return table
 }

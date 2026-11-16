@@ -14,7 +14,7 @@ last section removes it completely.
 On your computer, in the project folder:
 
 ```bash
-make linux
+make linux data
 ```
 
 ```bash
@@ -23,6 +23,14 @@ scp bin/tattle-linux-amd64 root@your-proxmox:/usr/local/bin/tattle
 
 ```bash
 scp deploy/tattle.service root@your-proxmox:/etc/systemd/system/
+```
+
+```bash
+ssh root@your-proxmox mkdir -p /usr/share/tattle
+```
+
+```bash
+scp data/ip2asn.tsv.gz root@your-proxmox:/usr/share/tattle/
 ```
 
 On the host:
@@ -139,6 +147,10 @@ ip -br addr
 - [ ] **5b.** Devices on your LAN are tagged "Inside your network", and
       public sites "Internet".
 
+- [ ] **5c.** A destination that shows only an internet address (try
+      `pct exec 101 -- curl -sk -o /dev/null https://1.1.1.1`) names its
+      owner underneath, and its detail page has a "Network" line.
+
 ## 6. Device names
 
 - [ ] **6a.** Under "Coming in", your laptop or phone appears by a name,
@@ -212,7 +224,7 @@ systemctl disable --now tattle
 ```
 
 ```bash
-rm /etc/systemd/system/tattle.service /usr/local/bin/tattle
+rm -r /etc/systemd/system/tattle.service /usr/local/bin/tattle /usr/share/tattle
 ```
 
 To also delete the recorded history:

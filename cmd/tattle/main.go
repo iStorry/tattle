@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
@@ -24,6 +25,7 @@ import (
 	"github.com/istorry/tattle/internal/demo"
 	"github.com/istorry/tattle/internal/guests"
 	"github.com/istorry/tattle/internal/model"
+	"github.com/istorry/tattle/internal/owners"
 	"github.com/istorry/tattle/internal/serve"
 	"github.com/istorry/tattle/internal/store"
 	"github.com/istorry/tattle/internal/tracker"
@@ -43,6 +45,7 @@ func main() {
 		tlsCert   = flag.String("tls-cert", "", "your own HTTPS certificate file (default: one is generated)")
 		tlsKey    = flag.String("tls-key", "", "the private key for --tls-cert")
 		plainHTTP = flag.Bool("http", false, "serve plain HTTP, for use behind a reverse proxy that provides HTTPS")
+		ipData    = flag.String("ip-data", "/usr/share/tattle/ip2asn.tsv.gz", "table of who owns which internet addresses")
 		showVer   = flag.Bool("version", false, "print the version and exit")
 	)
 	flag.Usage = func() {
@@ -68,7 +71,7 @@ func main() {
 	log.SetFlags(log.Ldate | log.Ltime)
 
 	opts := options{
-		listen: *listen, dbPath: *dbPath, ifaces: *ifaces, pveDir: *pveDir,
+		listen: *listen, dbPath: *dbPath, ifaces: *ifaces, pveDir: *pveDir, ipData: *ipData,
 		demo: *demoMode, requireLogin: !*demoMode || *demoLogin,
 		tlsCert: *tlsCert, tlsKey: *tlsKey,
 		// The demo runs on your own computer, where HTTPS adds nothing.
@@ -80,9 +83,9 @@ func main() {
 }
 
 type options struct {
-	listen, dbPath, ifaces, pveDir string
-	demo, requireLogin, plainHTTP  bool
-	tlsCert, tlsKey                string
+	listen, dbPath, ifaces, pveDir, ipData string
+	demo, requireLogin, plainHTTP          bool
+	tlsCert, tlsKey                        string
 }
 
 func run(o options) error {
@@ -129,6 +132,25 @@ func run(o options) error {
 		return fmt.Errorf("cannot serve the dashboard on %s: %w", o.listen, err)
 	}
 	handler := api.New(st, status, ui.Files(), o.requireLogin)
+	if o.demo {
+		handler.SetOwners(demo.Owners())
+	} else {
+		// Read in the background: it takes a moment and nothing depends on it.
+		go func() {
+			table, err := owners.Load(o.ipData)
+			switch {
+			case errors.Is(err, os.ErrNotExist):
+				log.Printf("no address-owner table at %s; addresses without a name will show without an owner", o.ipData)
+			case err != nil:
+				log.Printf("reading the address-owner table: %v", err)
+			default:
+				handler.SetOwners(table)
+				// Reading the table leaves several times its size in
+				// scratch memory; hand that back now, not eventually.
+				debug.FreeOSMemory()
+			}
+		}()
+	}
 	served := make(chan error, 1)
 	go func() {
 		if certs != nil {

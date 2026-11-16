@@ -35,3 +35,12 @@ type FlowDelta struct {
 	FirstSeen  int64 // unix milliseconds
 	LastSeen   int64 // unix milliseconds
 }
+
+// Owner is the network an internet address belongs to.
+type Owner struct {
+	Name string `json:"name"` // the organisation, such as "Cloudflare, Inc."
+	ASN  uint32 `json:"asn"`  // its network number
+	// Country is where the network is registered, as a two-letter code, or
+	// "". It is not where the server answering is located.
+	Country string `json:"country"`
+}

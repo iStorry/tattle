@@ -18,13 +18,19 @@ pretend home lab. Building needs Go and pnpm.
 
 ## Install on a Proxmox host
 
-Build the Linux binary on your computer and copy it over:
+Build the Linux binary on your computer, fetch the table of who owns which
+internet addresses, and copy them over:
 
 ```bash
-make linux
+make linux data
 scp bin/tattle-linux-amd64 root@your-proxmox:/usr/local/bin/tattle
 scp deploy/tattle.service root@your-proxmox:/etc/systemd/system/
+ssh root@your-proxmox mkdir -p /usr/share/tattle
+scp data/ip2asn.tsv.gz root@your-proxmox:/usr/share/tattle/
 ```
+
+The table is optional. Without it, internet addresses that have no name
+show without an owner.
 
 Then on the host:
 
@@ -103,6 +109,7 @@ only what is needed to start Tattle; everything else is in Settings.
 | `--tls-cert`, `--tls-key` | generated | Your own HTTPS certificate and key |
 | `--http` | off | Serve plain HTTP, for use behind an HTTPS reverse proxy |
 | `--iface` | every `vmbr*` bridge | Bridges to watch, comma separated |
+| `--ip-data` | `/usr/share/tattle/ip2asn.tsv.gz` | Table of who owns which internet addresses |
 | `--db` | `/var/lib/tattle/tattle.db` | Where history is kept |
 | `--pve-dir` | `/etc/pve` | Proxmox config directory |
 | `--demo` | off | Show invented traffic, with no sign-in, over plain HTTP |
@@ -124,6 +131,12 @@ many bytes moved in each direction. Totals are stored per minute in SQLite.
   laptop or a television, come from what the device announces about itself
   (mDNS and DHCP), or from a name you give it on its detail page. Your name
   always wins.
+- **Address owners.** For an internet address, Tattle says which
+  organisation's network it belongs to ("Cloudflare, Inc."), from a table
+  kept on the host. Nothing is looked up over the network, and addresses
+  inside your network are never looked up at all. The table is the
+  public-domain list from [iptoasn.com](https://iptoasn.com), fetched when
+  Tattle is built; it uses about 25 MB of memory.
 - **What's new** lists the first time a machine contacts a place, or a
   caller reaches a machine. Each machine is watched for a day before
   anything it does is called new, and places are remembered for over a year,
@@ -136,6 +149,9 @@ many bytes moved in each direction. Totals are stored per minute in SQLite.
 - **Names for some connections.** A destination shows as a bare address when
   the guest connects by address, or uses a protocol other than HTTPS, HTTP/3
   or HTTP together with encrypted DNS.
+- **Where a server is.** The country shown for a network is where the
+  network is registered. A company registered in the United States may be
+  answering you from a server anywhere.
 - **Docker containers inside a VM.** They appear as the VM.
 - **Guests that bypass the bridge**, such as a VM with a passed-through
   network card.

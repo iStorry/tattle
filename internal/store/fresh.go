@@ -140,6 +140,8 @@ type First struct {
 	Port      int    `json:"port"`
 	Proto     string `json:"proto"`
 	Local     bool   `json:"local"`
+	// Owner is the network its address belongs to, when known; set by the API.
+	Owner *model.Owner `json:"owner,omitempty"`
 }
 
 // Learning says a machine is still inside its learning period.

@@ -52,6 +52,7 @@ export function WhatsNew(p: {
                   <span className="row-sub">
                     {svc.label}
                     {(f.name !== f.ip || deviceLabel(p.devices, f.name)) && ` · ${f.ip}`}
+                    {f.name === f.ip && f.owner && ` · ${f.owner.name}`}
                   </span>
                 </div>
                 <div className="row-side">

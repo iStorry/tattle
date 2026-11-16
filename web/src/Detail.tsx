@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { api, deviceLabel, isAddress, type Conversation, type Device, type Devices, type Machine, type PeerDetail } from './api'
+import { api, countryName, deviceLabel, isAddress, type Conversation, type Device, type Devices, type Machine, type PeerDetail } from './api'
 import { TrafficChart } from './Chart'
 import { ago, bytes, count, KIND_LABEL, plural, service, YOURS_LABEL } from './format'
 import { Amounts, Empty, ScopeTag, Tile } from './parts'
@@ -101,6 +101,19 @@ export function PeerPage(p: {
               <dd>
                 {addresses.slice(0, 6).join(', ')}
                 {addresses.length > 6 && ` and ${addresses.length - 6} more`}
+              </dd>
+            </div>
+          )}
+          {fresh.owner && (
+            <div>
+              <dt>Network</dt>
+              <dd>
+                {fresh.owner.name}
+                <span className="port">
+                  {' '}
+                  AS{fresh.owner.asn}
+                  {fresh.owner.country && `, registered in ${countryName(fresh.owner.country)}`}
+                </span>
               </dd>
             </div>
           )}

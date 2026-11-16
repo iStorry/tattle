@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/istorry/tattle/internal/model"
+	"github.com/istorry/tattle/internal/owners"
 	"github.com/istorry/tattle/internal/store"
 )
 
@@ -292,5 +293,47 @@ func TestNamingDevices(t *testing.T) {
 	}
 	if body := c.want("PUT", "/api/devices", `{"ip":"192.168.1.42","name":""}`, 200); body != `[]` {
 		t.Errorf("after removing the name: %s", body)
+	}
+}
+
+func TestOwnersAreAttachedToInternetAddresses(t *testing.T) {
+	c, srv, st := setUp(t, "correct horse")
+	now := time.Now()
+	flow := func(ip, domain string) model.FlowDelta {
+		return model.FlowDelta{Bucket: now.Unix() / 60 * 60, ClientID: "vm-100", ClientIP: "192.168.1.20", ServerIP: ip, Domain: domain,
+			ServerPort: 443, Proto: "tcp", BytesUp: 1, BytesDown: 1, Packets: 2, Conns: 1, FirstSeen: now.UnixMilli(), LastSeen: now.UnixMilli()}
+	}
+	if err := st.Apply([]model.FlowDelta{flow("1.1.1.1", ""), flow("192.168.1.91", ""), flow("203.0.113.5", "unknown-owner.example")}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Without a table nothing is claimed.
+	if body := c.want("GET", "/api/peers", "", 200); strings.Contains(body, `"owner"`) {
+		t.Errorf("owner reported without a table: %s", body)
+	}
+
+	table, err := owners.Parse(strings.NewReader("1.1.1.0\t1.1.1.255\t13335\tUS\tCLOUDFLARENET - Cloudflare, Inc.\n" +
+		"192.168.0.0\t192.168.255.255\t64999\tZZ\tBOGUS - Should never be shown\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.SetOwners(table)
+
+	body := c.want("GET", "/api/peers", "", 200)
+	if !strings.Contains(body, `"owner":{"name":"Cloudflare, Inc.","asn":13335,"country":"US"}`) {
+		t.Errorf("no owner for 1.1.1.1: %s", body)
+	}
+	// An address inside the home network is never looked up, whatever the table says.
+	if strings.Contains(body, "Should never be shown") {
+		t.Errorf("a local address was given an owner: %s", body)
+	}
+	if strings.Count(body, `"owner"`) != 1 {
+		t.Errorf("expected exactly one owner: %s", body)
+	}
+	if body := c.want("GET", "/api/peer?name=1.1.1.1", "", 200); !strings.Contains(body, `"owner":{"name":"Cloudflare, Inc."`) {
+		t.Errorf("detail has no owner: %s", body)
+	}
+	if body := c.want("GET", "/api/status", "", 200); !strings.Contains(body, `"ownerRanges":2`) {
+		t.Errorf("status = %s", body)
 	}
 }

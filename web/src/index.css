@@ -879,7 +879,8 @@ path.sent {
   font-size: 12.5px;
 }
 
-.table .port {
+.table .port,
+.facts .port {
   color: var(--text-3);
 }
 

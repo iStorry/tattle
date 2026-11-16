@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/istorry/tattle/internal/model"
+	"github.com/istorry/tattle/internal/owners"
 	"github.com/istorry/tattle/internal/store"
 )
 
@@ -35,6 +37,9 @@ type Server struct {
 	status *Status
 	auth   auth
 	mux    *http.ServeMux
+	// owners says whose an internet address is. It is nil until the table
+	// has been loaded, and stays nil if there is none.
+	owners atomic.Pointer[owners.Table]
 
 	mu       sync.Mutex
 	settings store.Settings
@@ -92,6 +97,21 @@ var openPaths = map[string]bool{
 	"/api/auth/setup":  true,
 	"/api/auth/login":  true,
 	"/api/auth/logout": true,
+}
+
+// SetOwners provides the table used to say whose an address is.
+func (s *Server) SetOwners(t *owners.Table) { s.owners.Store(t) }
+
+// ownerOf returns the network an internet address belongs to, if known.
+// Addresses inside the home network have no owner to look up.
+func (s *Server) ownerOf(ip string, local bool) *model.Owner {
+	if local || ip == "" {
+		return nil
+	}
+	if o, ok := s.owners.Load().LookupString(ip); ok {
+		return &o
+	}
+	return nil
 }
 
 // Settings returns the settings currently in effect.
@@ -162,6 +182,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"now":           time.Now().UnixMilli(),
 		"packets":       s.status.Packets.Load(),
 		"dropped":       s.status.Dropped.Load(),
+		"ownerRanges":   s.owners.Load().Len(),
 	}, nil)
 }
 
@@ -179,6 +200,9 @@ func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handlePeers(w http.ResponseWriter, r *http.Request) {
 	v, err := s.store.Peers(r.Context(), since(r, time.Now()), r.URL.Query().Get("machine"), scope(r), limit(r, 500, 2000))
+	for i := range v {
+		v[i].Owner = s.ownerOf(v[i].IP, v[i].Local)
+	}
 	writeJSON(w, v, err)
 }
 
@@ -208,6 +232,9 @@ func (s *Server) handleNameDevice(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleNew(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	v, err := s.store.Fresh(r.Context(), since(r, now), now, r.URL.Query().Get("machine"), scope(r), limit(r, 5, 200))
+	for i := range v.Firsts {
+		v.Firsts[i].Owner = s.ownerOf(v.Firsts[i].IP, v.Firsts[i].Local)
+	}
 	writeJSON(w, v, err)
 }
 
@@ -220,6 +247,12 @@ func (s *Server) handlePeer(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now()
 	v, err := s.store.Peer(r.Context(), since(r, now), now, q.Get("direction"), name, q.Get("machine"))
+	switch {
+	case len(v.IPs) > 0:
+		v.Owner = s.ownerOf(v.IPs[0], v.Local)
+	default:
+		v.Owner = s.ownerOf(name, v.Local) // an address with no traffic in the range
+	}
 	writeJSON(w, v, err)
 }
 

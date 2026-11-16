@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"time"
+
+	"github.com/istorry/tattle/internal/model"
 )
 
 // PeerDetail is everything known about one place machines talked to
@@ -13,6 +15,8 @@ type PeerDetail struct {
 	Direction string `json:"direction"`
 	PeerID    string `json:"peerId"` // set when the other end is also a tracked machine
 	Local     bool   `json:"local"`
+	// Owner is the network its address belongs to, when known; set by the API.
+	Owner *model.Owner `json:"owner,omitempty"`
 	// IPs are the addresses seen for it in the time range.
 	IPs []string `json:"ips"`
 	// FirstSeen is the earliest it appears anywhere in the kept history, not

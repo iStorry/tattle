@@ -333,20 +333,23 @@ func (s *Store) Timeline(ctx context.Context, since, now time.Time, machine, sco
 // Peer is one place that machines talked to (direction "out") or that
 // talked to them (direction "in"), with totals from the machines' side.
 type Peer struct {
-	Name      string   `json:"name"`      // domain if known, otherwise the address
-	Direction string   `json:"direction"` // "out" or "in"
-	PeerID    string   `json:"peerId"`    // set when the other end is also a tracked machine
-	Local     bool     `json:"local"`     // the other end is inside the home network
-	New       bool     `json:"new"`       // a machine dealt with it for the first time in the range
-	IP        string   `json:"ip"`        // one of its addresses
-	IPCount   int64    `json:"ipCount"`
-	Machines  []string `json:"machines"`
-	Services  []string `json:"services"` // "443/tcp"
-	Sent      int64    `json:"sent"`
-	Received  int64    `json:"received"`
-	Conns     int64    `json:"conns"`
-	FirstSeen int64    `json:"firstSeen"`
-	LastSeen  int64    `json:"lastSeen"`
+	Name      string `json:"name"`      // domain if known, otherwise the address
+	Direction string `json:"direction"` // "out" or "in"
+	PeerID    string `json:"peerId"`    // set when the other end is also a tracked machine
+	Local     bool   `json:"local"`     // the other end is inside the home network
+	New       bool   `json:"new"`       // a machine dealt with it for the first time in the range
+	// Owner is the network an internet address belongs to, when known. It
+	// is filled in by the API, which holds the table.
+	Owner     *model.Owner `json:"owner,omitempty"`
+	IP        string       `json:"ip"` // one of its addresses
+	IPCount   int64        `json:"ipCount"`
+	Machines  []string     `json:"machines"`
+	Services  []string     `json:"services"` // "443/tcp"
+	Sent      int64        `json:"sent"`
+	Received  int64        `json:"received"`
+	Conns     int64        `json:"conns"`
+	FirstSeen int64        `json:"firstSeen"`
+	LastSeen  int64        `json:"lastSeen"`
 }
 
 // Peers lists who was talked to since the given time, most recent first.

@@ -8,6 +8,7 @@ export type Status = {
   now: number
   packets: number
   dropped: number
+  ownerRanges: number
 }
 
 export type Scope = 'all' | 'internet' | 'local'
@@ -52,6 +53,7 @@ export type Peer = {
   peerId: string
   local: boolean
   new: boolean
+  owner?: Owner
   ip: string
   ipCount: number
   machines: string[]
@@ -61,6 +63,25 @@ export type Peer = {
   conns: number
   firstSeen: number
   lastSeen: number
+}
+
+/** The network an internet address belongs to. */
+export type Owner = {
+  name: string
+  asn: number
+  country: string // where the network is registered, as a two-letter code, or ''
+}
+
+const regionNames = typeof Intl.DisplayNames === 'function' ? new Intl.DisplayNames(undefined, { type: 'region' }) : null
+
+/** "United States" for "US"; the code itself if the browser cannot say. */
+export function countryName(code: string): string {
+  if (!code) return ''
+  try {
+    return regionNames?.of(code) ?? code
+  } catch {
+    return code
+  }
 }
 
 /** A name for something on the network that is not a VM or container. */
@@ -93,6 +114,7 @@ export type First = {
   port: number
   proto: string
   local: boolean
+  owner?: Owner
 }
 
 export type Fresh = {
@@ -106,6 +128,7 @@ export type PeerDetail = {
   direction: 'out' | 'in'
   peerId: string
   local: boolean
+  owner?: Owner
   ips: string[]
   firstSeen: number // earliest in the kept history, or 0
   lastSeen: number // within the time range, or 0
