@@ -120,6 +120,10 @@ many bytes moved in each direction. Totals are stored per minute in SQLite.
   server name in the HTTPS or HTTP/3 handshake, the `Host` header of plain
   HTTP, and DNS answers seen on the bridge.
 
+- **Device names** for things that are not VMs or containers, such as a
+  laptop or a television, come from what the device announces about itself
+  (mDNS and DHCP), or from a name you give it on its detail page. Your name
+  always wins.
 - **What's new** lists the first time a machine contacts a place, or a
   caller reaches a machine. Each machine is watched for a day before
   anything it does is called new, and places are remembered for over a year,
@@ -137,6 +141,11 @@ many bytes moved in each direction. Totals are stored per minute in SQLite.
   network card.
 
 ## Known limitations
+
+- **Device names belong to an address, not to the device.** If your router
+  hands a named device's address to a different device, the name moves with
+  the address until the device announces itself again or you rename it.
+  Giving devices fixed addresses in your router avoids this.
 
 - **Masqueraded connections can occasionally show for the host as well.**
   When the host routes or masquerades guest traffic, Tattle counts it once,

@@ -70,7 +70,7 @@ func Open(path string) (*Store, error) {
 	// One connection keeps writes serialised and makes the in-memory
 	// database (which is per-connection) behave like a file.
 	db.SetMaxOpenConns(1)
-	if _, err := db.Exec(schema + freshSchema); err != nil {
+	if _, err := db.Exec(schema + freshSchema + devicesSchema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("opening database %s: %w", path, err)
 	}
@@ -128,8 +128,10 @@ func (s *Store) Prune(before time.Time) error {
 	if _, err := s.db.Exec(`DELETE FROM flows WHERE bucket < ?`, before.Unix()); err != nil {
 		return err
 	}
-	_, err := s.db.Exec(`DELETE FROM seen WHERE last_seen < ?`, time.Now().Add(-sightingLife).UnixMilli())
-	return err
+	if _, err := s.db.Exec(`DELETE FROM seen WHERE last_seen < ?`, time.Now().Add(-sightingLife).UnixMilli()); err != nil {
+		return err
+	}
+	return s.pruneDevices(time.Now())
 }
 
 // SaveMachines records the machines that exist right now. Machines that

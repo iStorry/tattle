@@ -139,30 +139,38 @@ ip -br addr
 - [ ] **5b.** Devices on your LAN are tagged "Inside your network", and
       public sites "Internet".
 
-## 6. What's new
+## 6. Device names
 
-- [ ] **6a.** On the first day, the "New in the last…" card says it is
+- [ ] **6a.** Under "Coming in", your laptop or phone appears by a name,
+      not just an address. Many devices announce one within a few minutes
+      of joining the network; note what kinds of device did and did not.
+- [ ] **6b.** Open a device that shows only an address, choose "Name this
+      device", and save a name. The name appears in the lists.
+
+## 7. What's new
+
+- [ ] **7a.** On the first day, the "New in the last…" card says it is
       still learning what is normal for your machines, and lists nothing.
-- [ ] **6b.** A day or more after installing, run the first `curl` from
+- [ ] **7b.** A day or more after installing, run the first `curl` from
       check 3a against a site that guest has never contacted. It appears in
       the card within a few seconds, and has a "New" tag in the list.
 
-## 7. Load and restarts
+## 8. Load and restarts
 
 Run a large transfer through a guest (a big download or `iperf3`) for a
 minute, with `top` open on the host.
 
-- [ ] **7a.** Note Tattle's CPU percentage during the transfer.
-- [ ] **7b.** The dashboard footer does not report missed packets. If it
+- [ ] **8a.** Note Tattle's CPU percentage during the transfer.
+- [ ] **8b.** The dashboard footer does not report missed packets. If it
       does, note the number.
 
 ```bash
 systemctl restart tattle
 ```
 
-- [ ] **7c.** After the restart, earlier history is still there.
+- [ ] **8c.** After the restart, earlier history is still there.
 
-## 8. Expected gaps
+## 9. Expected gaps
 
 These are known and already on the roadmap. Note them only if they are worse
 than described.

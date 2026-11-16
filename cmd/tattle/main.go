@@ -304,6 +304,9 @@ func startLive(ctx context.Context, st *store.Store, status *api.Status, ifaceFl
 				if err := st.Apply(tr.Flush(now)); err != nil {
 					log.Printf("saving traffic: %v", err)
 				}
+				if err := st.SaveAnnounced(tr.TakeDeviceNames(), now); err != nil {
+					log.Printf("saving device names: %v", err)
+				}
 			case <-refresh.C:
 				reload()
 				for _, src := range sources {

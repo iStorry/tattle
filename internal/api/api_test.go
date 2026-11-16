@@ -276,3 +276,21 @@ func TestRetentionIsASetting(t *testing.T) {
 		t.Errorf("status = %s", body)
 	}
 }
+
+func TestNamingDevices(t *testing.T) {
+	c, _, _ := setUp(t, "correct horse")
+	anon := &client{t: t, srv: c.srv}
+	anon.want("GET", "/api/devices", "", 401)
+	anon.want("PUT", "/api/devices", `{"ip":"192.168.1.42","name":"Laptop"}`, 401)
+
+	if body := c.want("PUT", "/api/devices", `{"ip":"192.168.1.42","name":"  My   laptop "}`, 200); body != `[{"ip":"192.168.1.42","name":"My laptop","announced":""}]` {
+		t.Errorf("after naming: %s", body)
+	}
+	c.want("PUT", "/api/devices", `{"ip":"nonsense","name":"x"}`, 400)
+	if text := c.want("PUT", "/api/devices", `{"ip":"192.168.1.42","name":"`+strings.Repeat("x", 41)+`"}`, 400); !strings.Contains(text, "too long") {
+		t.Errorf("message = %q", text)
+	}
+	if body := c.want("PUT", "/api/devices", `{"ip":"192.168.1.42","name":""}`, 200); body != `[]` {
+		t.Errorf("after removing the name: %s", body)
+	}
+}

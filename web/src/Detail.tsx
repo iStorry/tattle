@@ -1,13 +1,19 @@
-import { useEffect, useState } from 'react'
-import { api, type Conversation, type Machine, type PeerDetail } from './api'
+import { useEffect, useState, type FormEvent } from 'react'
+import { api, deviceLabel, isAddress, type Conversation, type Device, type Devices, type Machine, type PeerDetail } from './api'
 import { TrafficChart } from './Chart'
 import { ago, bytes, count, KIND_LABEL, plural, service, YOURS_LABEL } from './format'
 import { Amounts, Empty, ScopeTag, Tile } from './parts'
 import { formatHash, RANGES, type View } from './url'
 
 /** Everything about one destination or caller: who talks to it, how, and how much. */
-export function PeerPage(p: { view: View; names: Map<string, Machine>; now: number }) {
-  const { view, names, now } = p
+export function PeerPage(p: {
+  view: View
+  names: Map<string, Machine>
+  devices: Devices
+  onDevices: (list: Device[]) => void
+  now: number
+}) {
+  const { view, names, devices, now } = p
   const { peer, dir, machine, range } = view
   const [detail, setDetail] = useState<PeerDetail | null>(null)
   const [failed, setFailed] = useState(false)
@@ -60,8 +66,9 @@ export function PeerPage(p: { view: View; names: Map<string, Machine>; now: numb
   const byMachine = groupByMachine(fresh.conversations, incoming)
   // A destination known by name lists its addresses; one known only by its
   // address shows that address when the heading shows a machine name instead.
+  const device = !other && isAddress(fresh.name) ? deviceLabel(devices, fresh.name) : ''
   const others = fresh.ips.filter((ip) => ip !== fresh.name)
-  const addresses = others.length > 0 ? others : other ? [fresh.name] : []
+  const addresses = others.length > 0 ? others : other || device ? [fresh.name] : []
   const quiet = fresh.conns === 0
 
   return (
@@ -69,7 +76,7 @@ export function PeerPage(p: { view: View; names: Map<string, Machine>; now: numb
       <div className="heading">
         {back}
         <h1>
-          {other ? other.name : fresh.name}
+          {other ? other.name : device || fresh.name}
           {other && <span className="tag">{YOURS_LABEL[other.kind]}</span>}
           <ScopeTag local={fresh.local} incoming={incoming} />
           {services.some((s) => s.plain) && <span className="tag warn">Not encrypted</span>}
@@ -84,6 +91,9 @@ export function PeerPage(p: { view: View; names: Map<string, Machine>; now: numb
             </>
           )}
         </p>
+        {!other && isAddress(fresh.name) && (
+          <DeviceName ip={fresh.name} device={devices.get(fresh.name)} onDevices={p.onDevices} />
+        )}
         <dl className="facts">
           {addresses.length > 0 && (
             <div>
@@ -198,6 +208,83 @@ export function PeerPage(p: { view: View; names: Map<string, Machine>; now: numb
         </>
       )}
     </main>
+  )
+}
+
+/** Lets the owner give an address a name of their own, such as "Laptop". */
+function DeviceName(p: { ip: string; device?: Device; onDevices: (list: Device[]) => void }) {
+  const [editing, setEditing] = useState(false)
+  const [name, setName] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const chosen = p.device?.name ?? ''
+  const announced = p.device?.announced ?? ''
+
+  const save = async (value: string) => {
+    setBusy(true)
+    setError('')
+    try {
+      p.onDevices(await api.nameDevice(p.ip, value))
+      setEditing(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'The name could not be saved.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (!editing) {
+    return (
+      <p className="device-name">
+        {chosen
+          ? announced && `It calls itself “${announced}”. `
+          : announced && `This is the name the device gives itself. `}
+        <button
+          className="toggle"
+          onClick={() => {
+            setName(chosen)
+            setEditing(true)
+          }}
+        >
+          {chosen ? 'Rename' : announced ? 'Choose your own name' : 'Name this device'}
+        </button>
+      </p>
+    )
+  }
+  return (
+    <form
+      className="device-name"
+      onSubmit={(e: FormEvent) => {
+        e.preventDefault()
+        void save(name)
+      }}
+    >
+      <input
+        className="input"
+        aria-label={`Name for ${p.ip}`}
+        placeholder={announced || 'Laptop'}
+        maxLength={40}
+        autoFocus
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+      />
+      <button className="button primary" disabled={busy}>
+        Save
+      </button>
+      <button type="button" className="button" disabled={busy} onClick={() => setEditing(false)}>
+        Cancel
+      </button>
+      {chosen && (
+        <button type="button" className="button" disabled={busy} onClick={() => void save('')}>
+          Remove name
+        </button>
+      )}
+      {error && (
+        <span role="alert" className="error">
+          {error}
+        </span>
+      )}
+    </form>
   )
 }
 

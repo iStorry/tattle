@@ -478,3 +478,34 @@ func TestPacketsSplitAcrossFlushesAreNotCountedTwice(t *testing.T) {
 		t.Errorf("sent = %d bytes over %d connections, want 100 over at most 1", up, conns)
 	}
 }
+
+func TestAnnouncedDeviceNamesAreCollected(t *testing.T) {
+	tr := newTracker()
+	broadcast := decode.MAC{0xff, 0xff, 0xff, 0xff, 0xff, 0xff}
+	multicast := decode.MAC{0x01, 0x00, 0x5e, 0x00, 0x00, 0xfb}
+
+	// An mDNS announcement: "Macbook-Pro.local is 192.168.1.42".
+	mdns := []byte{0, 0, 0x84, 0, 0, 0, 0, 1, 0, 0, 0, 0,
+		11, 'M', 'a', 'c', 'b', 'o', 'o', 'k', '-', 'P', 'r', 'o', 5, 'l', 'o', 'c', 'a', 'l', 0,
+		0, 1, 0x80, 1, 0, 0, 0, 120, 0, 4, 192, 168, 1, 42}
+	tr.Handle(pkt(laptopMAC, multicast, "192.168.1.42", "224.0.0.251", decode.ProtoUDP, 5353, 5353, 0, mdns), 90, t0)
+
+	// A DHCP request carrying a hostname and the address being asked for.
+	dhcp := make([]byte, 240)
+	dhcp[0] = 1
+	copy(dhcp[236:], []byte{0x63, 0x82, 0x53, 0x63})
+	dhcp = append(dhcp, 53, 1, 3, 12, 7, 'p', 'i', 'x', 'e', 'l', '-', '8', 50, 4, 192, 168, 1, 57, 255)
+	tr.Handle(pkt(laptopMAC, broadcast, "0.0.0.0", "255.255.255.255", decode.ProtoUDP, 68, 67, 0, dhcp), 300, t0)
+
+	got := tr.TakeDeviceNames()
+	if len(got) != 2 || got["192.168.1.42"] != "Macbook-Pro" || got["192.168.1.57"] != "pixel-8" {
+		t.Errorf("names = %v", got)
+	}
+	if again := tr.TakeDeviceNames(); len(again) != 0 {
+		t.Errorf("names were returned twice: %v", again)
+	}
+	// Announcements are not traffic to report.
+	if d := tr.Flush(t0); len(d) != 0 {
+		t.Errorf("announcements were counted as traffic: %+v", d)
+	}
+}

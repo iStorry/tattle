@@ -63,6 +63,26 @@ export type Peer = {
   lastSeen: number
 }
 
+/** A name for something on the network that is not a VM or container. */
+export type Device = {
+  ip: string
+  name: string // chosen by the owner, or ''
+  announced: string // what the device calls itself, or ''
+}
+
+export type Devices = Map<string, Device>
+
+/** The name to show for an address: the owner's, else the device's own, else none. */
+export function deviceLabel(devices: Devices, ip: string): string {
+  const d = devices.get(ip)
+  return d ? d.name || d.announced : ''
+}
+
+/** Whether a destination is known only by its address, not by a domain name. */
+export function isAddress(name: string): boolean {
+  return name.includes(':') || /^\d{1,3}(\.\d{1,3}){3}$/.test(name)
+}
+
 export type First = {
   machine: string
   direction: 'out' | 'in'
@@ -160,6 +180,9 @@ export const api = {
   peer: (range: number, direction: 'out' | 'in', name: string, machine: string) =>
     get<PeerDetail>('/api/peer', { range, direction, name, machine }),
   split: (range: number, machine: string) => get<Split>('/api/split', { range, machine }),
+  devices: () => get<Device[]>('/api/devices'),
+  nameDevice: async (ip: string, name: string): Promise<Device[]> =>
+    (await send('PUT', '/api/devices', { ip, name })).json() as Promise<Device[]>,
   fresh: (range: number, machine: string, scope: Scope, limit: number) =>
     get<Fresh>('/api/new', { range, machine, scope, limit }),
   settings: () => get<SettingsInfo>('/api/settings'),

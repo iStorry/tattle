@@ -1,4 +1,4 @@
-import type { Fresh, Machine } from './api'
+import { deviceLabel, type Devices, type Fresh, type Machine } from './api'
 import { ago, plural, service } from './format'
 import { ScopeTag } from './parts'
 import { formatHash, type View } from './url'
@@ -7,6 +7,7 @@ import { formatHash, type View } from './url'
 export function WhatsNew(p: {
   fresh: Fresh
   names: Map<string, Machine>
+  devices: Devices
   now: number
   view: View
   rangePhrase: string
@@ -28,7 +29,7 @@ export function WhatsNew(p: {
             const svc = service(`${f.port}/${f.proto}`)
             const place = (
               <a href={formatHash({ ...view, machine: f.machine, peer: f.name, dir: f.direction })}>
-                {names.get(f.peerId)?.name ?? f.name}
+                {names.get(f.peerId)?.name ?? (deviceLabel(p.devices, f.name) || f.name)}
               </a>
             )
             return (
@@ -50,7 +51,7 @@ export function WhatsNew(p: {
                   </span>
                   <span className="row-sub">
                     {svc.label}
-                    {f.name !== f.ip && ` · ${f.ip}`}
+                    {(f.name !== f.ip || deviceLabel(p.devices, f.name)) && ` · ${f.ip}`}
                   </span>
                 </div>
                 <div className="row-side">

@@ -65,6 +65,8 @@ func New(st *store.Store, status *Status, ui fs.FS, requireLogin bool) *Server {
 	s.mux.HandleFunc("GET /api/peers", s.handlePeers)
 	s.mux.HandleFunc("GET /api/peer", s.handlePeer)
 	s.mux.HandleFunc("GET /api/new", s.handleNew)
+	s.mux.HandleFunc("GET /api/devices", s.handleDevices)
+	s.mux.HandleFunc("PUT /api/devices", s.handleNameDevice)
 	s.mux.Handle("GET /", http.FileServerFS(ui))
 	return s
 }
@@ -178,6 +180,29 @@ func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePeers(w http.ResponseWriter, r *http.Request) {
 	v, err := s.store.Peers(r.Context(), since(r, time.Now()), r.URL.Query().Get("machine"), scope(r), limit(r, 500, 2000))
 	writeJSON(w, v, err)
+}
+
+func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
+	v, err := s.store.Devices(r.Context())
+	writeJSON(w, v, err)
+}
+
+// handleNameDevice sets or, with an empty name, removes the owner's name
+// for an address.
+func (s *Server) handleNameDevice(w http.ResponseWriter, r *http.Request) {
+	var req struct{ IP, Name string }
+	if !readJSON(w, r, &req) {
+		return
+	}
+	name, err := store.CleanDeviceName(req.Name)
+	if err == nil {
+		err = s.store.NameDevice(req.IP, name)
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.handleDevices(w, r)
 }
 
 func (s *Server) handleNew(w http.ResponseWriter, r *http.Request) {

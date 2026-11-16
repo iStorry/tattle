@@ -15,6 +15,7 @@ import (
 const (
 	maxFlows     = 200_000
 	maxDNSNames  = 100_000
+	maxAnnounced = 5_000
 	tcpIdle      = 5 * time.Minute
 	otherIdle    = 60 * time.Second
 	closeLinger  = 5 * time.Second
@@ -158,9 +159,12 @@ func (h *helloBuf) check(truncated bool) (name string, done bool) {
 
 // Tracker is safe for concurrent use by several capture goroutines.
 type Tracker struct {
-	mu     sync.Mutex
-	flows  map[flowKey]*flow
-	hellos int // connections currently joining a ClientHello
+	mu    sync.Mutex
+	flows map[flowKey]*flow
+	// announced holds names devices have given for their addresses since
+	// the last time they were collected.
+	announced map[netip.Addr]string
+	hellos    int // connections currently joining a ClientHello
 
 	macOwner map[decode.MAC]string   // MAC -> machine id
 	ipOwner  map[netip.Addr]string   // address -> machine id
@@ -275,6 +279,20 @@ func (t *Tracker) Handle(p decode.Packet, wireLen int, now time.Time) {
 			for _, a := range addrs {
 				t.dnsAny[a] = name
 				t.dnsPair[addrPair{p.DstIP, a}] = name
+			}
+		}
+	}
+
+	// Devices say what they are called in broadcasts that reach the bridge.
+	if p.Proto == decode.ProtoUDP {
+		switch {
+		case p.SrcPort == 5353 && p.DstPort == 5353:
+			for _, h := range decode.ParseMDNSHosts(p.Payload) {
+				t.announce(h)
+			}
+		case p.SrcPort == 68 && p.DstPort == 67:
+			if h, ok := decode.ParseDHCPRequest(p.Payload); ok {
+				t.announce(h)
 			}
 		}
 	}
@@ -442,6 +460,28 @@ func (t *Tracker) dropHello(f *flow) {
 		f.hello = nil
 		t.hellos--
 	}
+}
+
+func (t *Tracker) announce(h decode.HostAddr) {
+	if t.announced == nil {
+		t.announced = map[netip.Addr]string{}
+	}
+	if len(t.announced) < maxAnnounced {
+		t.announced[h.Addr.Unmap()] = h.Name
+	}
+}
+
+// TakeDeviceNames returns the names devices have announced for their
+// addresses since the last call.
+func (t *Tracker) TakeDeviceNames() map[string]string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	out := make(map[string]string, len(t.announced))
+	for addr, name := range t.announced {
+		out[addr.String()] = name
+	}
+	t.announced = nil
+	return out
 }
 
 // srcIsClient guesses which end started a connection when Tattle did not

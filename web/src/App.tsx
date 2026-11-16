@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   api,
+  deviceLabel,
+  type Device,
+  type Devices,
   type Fresh,
   type Machine,
   type Peer,
@@ -25,6 +28,11 @@ type Data = {
   peers: Peer[]
   split: Split
   fresh: Fresh
+  devices: Devices
+}
+
+function byAddress(list: Device[]): Devices {
+  return new Map(list.map((d) => [d.ip, d]))
 }
 
 /** Remembers a search box's value only once the typing has paused. */
@@ -97,18 +105,19 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
     const load = async () => {
       if (document.hidden) return
       try {
-        const [st, machines, timeline, peers, split, fresh] = await Promise.all([
+        const [st, machines, timeline, peers, split, fresh, devices] = await Promise.all([
           api.status(),
           api.machines(range, scope),
           api.timeline(range, machine, scope),
           api.peers(range, machine, scope),
           api.split(range, machine),
           api.fresh(range, machine, scope, newLimit),
+          api.devices(),
         ])
         if (!current) return
         setStatus(st)
         setNow(st.now)
-        setData({ machines, timeline, peers, split, fresh })
+        setData({ machines, timeline, peers, split, fresh, devices: byAddress(devices) })
         setFailed(false)
       } catch {
         if (current) setFailed(true)
@@ -136,7 +145,8 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
   // The tab title says what is open, which helps with bookmarks and history.
   // A destination that is one of the owner's machines is titled by its name.
   const peerMachine = data?.machines.find((m) => m.ips.includes(view.peer))
-  const pageTitle = route === 'settings' ? 'Settings' : (peerMachine?.name ?? view.peer) || (selected?.name ?? '')
+  const peerName = peerMachine?.name || (data && deviceLabel(data.devices, view.peer)) || view.peer
+  const pageTitle = route === 'settings' ? 'Settings' : peerName || (selected?.name ?? '')
   useEffect(() => {
     document.title = pageTitle ? `${pageTitle} · Tattle` : 'Tattle'
   }, [pageTitle])
@@ -156,7 +166,8 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
     return (
       p.name.toLowerCase().includes(q) ||
       p.ip.includes(q) ||
-      (names.get(p.peerId)?.name.toLowerCase().includes(q) ?? false)
+      (names.get(p.peerId)?.name.toLowerCase().includes(q) ?? false) ||
+      deviceLabel(data.devices, p.ip).toLowerCase().includes(q)
     )
   }
   const order = (a: Peer, b: Peer) =>
@@ -240,7 +251,13 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
         </nav>
 
         {view.peer ? (
-          <PeerPage view={view} names={names} now={now} />
+          <PeerPage
+            view={view}
+            names={names}
+            devices={data.devices}
+            onDevices={(list) => setData((d) => d && { ...d, devices: byAddress(list) })}
+            now={now}
+          />
         ) : (
         <main>
           <div className="heading">
@@ -261,6 +278,7 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
           <WhatsNew
             fresh={data.fresh}
             names={names}
+            devices={data.devices}
             now={now}
             view={view}
             rangePhrase={rangeLabel}
@@ -316,7 +334,7 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
               one for the details.
             </p>
 
-            <PeerList peers={shown} names={names} now={now} showMachines={!selected} view={view} />
+            <PeerList peers={shown} names={names} devices={data.devices} now={now} showMachines={!selected} view={view} />
           </section>
 
           <footer>
@@ -425,7 +443,14 @@ function SplitBar(p: { split: Split; info: SettingsInfo; settingsHref: string; s
   )
 }
 
-function PeerList(p: { peers: Peer[]; names: Map<string, Machine>; now: number; showMachines: boolean; view: View }) {
+function PeerList(p: {
+  peers: Peer[]
+  names: Map<string, Machine>
+  devices: Devices
+  now: number
+  showMachines: boolean
+  view: View
+}) {
   if (p.peers.length === 0) {
     return <Empty>Nothing here for this time range. Tattle only sees traffic from the moment it was started.</Empty>
   }
@@ -435,11 +460,13 @@ function PeerList(p: { peers: Peer[]; names: Map<string, Machine>; now: number; 
         const other = p.names.get(peer.peerId)
         const services = peer.services.map(service)
         const local = peer.local
+        // A device's name stands in for a bare address.
+        const device = !other && peer.name === peer.ip ? deviceLabel(p.devices, peer.ip) : ''
         return (
           <li key={peer.direction + peer.name}>
             <div className="row-main">
               <span className="row-title">
-                <a href={formatHash({ ...p.view, peer: peer.name, dir: peer.direction })}>{other ? other.name : peer.name}</a>
+                <a href={formatHash({ ...p.view, peer: peer.name, dir: peer.direction })}>{other ? other.name : device || peer.name}</a>
                 {peer.new && (
                   <span className="tag new" title="First seen in this time range">
                     New
@@ -455,7 +482,7 @@ function PeerList(p: { peers: Peer[]; names: Map<string, Machine>; now: number; 
                   .map((s) => s.label)
                   .join(', ')}
                 {services.length > 3 && ` and ${services.length - 3} more`}
-                {other || peer.name !== peer.ip ? ` · ${peer.ip}` : ''}
+                {other || device || peer.name !== peer.ip ? ` · ${peer.ip}` : ''}
                 {peer.ipCount > 1 && ` and ${peer.ipCount - 1} more`}
               </span>
               {p.showMachines && (

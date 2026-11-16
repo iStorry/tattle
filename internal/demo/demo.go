@@ -213,6 +213,11 @@ func Run(ctx context.Context, st *store.Store) error {
 	}
 
 	now := time.Now()
+	// Some of the pretend devices announce a name; the rest are left for
+	// the visitor to name.
+	if err := st.SaveAnnounced(map[string]string{laptop: "macbook-pro", phone: "pixel-8", tv: "living-room-tv"}, now); err != nil {
+		return fmt.Errorf("demo: %w", err)
+	}
 	var history []model.FlowDelta
 	// More than a day, so every machine is past its learning period and
 	// "What's new" has something to say.
