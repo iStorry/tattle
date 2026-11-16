@@ -36,8 +36,11 @@ journalctl -u tattle -n 20 --no-pager
 ```
 
 - [ ] **1a.** The log says `watching vmbr0` (or your bridges) and
-      `dashboard on http://...:8477`, with no errors.
-- [ ] **1b.** `http://your-proxmox:8477` shows "Set up Tattle". The setup
+      `dashboard on https://...:8477`, with no errors.
+- [ ] **1b.** `https://your-proxmox:8477` shows a certificate warning. The
+      fingerprint the browser shows for the certificate matches the one in
+      the log. After accepting it, the page shows "Set up Tattle".
+      Typing the address with `http://` ends up at the same page. The setup
       code from this command is accepted, and you can choose a password:
 
 ```bash
@@ -173,7 +176,7 @@ journalctl -u tattle --no-pager | tail -50
 ```
 
 ```bash
-curl -s localhost:8477/api/status
+curl -sk https://localhost:8477/api/auth
 ```
 
 ```bash

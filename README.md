@@ -32,9 +32,19 @@ Then on the host:
 systemctl enable --now tattle
 ```
 
-Open `http://your-proxmox:8477`. The first visit asks you to choose a
-password and to enter a setup code, which shows that the host is yours. The
-code is in the service log:
+Open `https://your-proxmox:8477`.
+
+Your browser will warn about the certificate on the first visit, as it does
+for the Proxmox web panel, because Tattle generates its own. The connection
+is still encrypted. To check you are accepting the right certificate,
+compare the fingerprint your browser shows with the one in the log:
+
+```bash
+journalctl -u tattle | grep fingerprint | tail -1
+```
+
+Tattle then asks you to choose a password and to enter a setup code, which
+shows that the host is yours. The code is in the service log:
 
 ```bash
 journalctl -u tattle | grep "setup code" | tail -1
@@ -48,8 +58,28 @@ and set a new one in the dashboard:
 tattle reset-password
 ```
 
-The password travels unencrypted unless you put Tattle behind an HTTPS
-reverse proxy.
+### Avoiding the certificate warning
+
+Use a certificate your browser already trusts. Tattle re-reads the files
+when they change, so renewals need no restart:
+
+```bash
+tattle --tls-cert /path/to/fullchain.pem --tls-key /path/to/privkey.pem
+```
+
+If you set up a trusted certificate for the Proxmox web panel (Datacenter →
+ACME), you can reuse it: the files are `/etc/pve/local/pveproxy-ssl.pem` and
+`/etc/pve/local/pveproxy-ssl.key`.
+
+Or put Tattle behind a reverse proxy that provides HTTPS, and have Tattle
+listen only to the proxy:
+
+```bash
+tattle --http --listen 127.0.0.1:8477
+```
+
+With `--http`, passwords are only as protected as the connection in front
+of Tattle.
 
 ## Settings
 
@@ -63,12 +93,14 @@ opens. Settings are saved on the host and apply to everyone.
 | Flag | Default | Meaning |
 |---|---|---|
 | `--listen` | `:8477` | Address for the dashboard |
+| `--tls-cert`, `--tls-key` | generated | Your own HTTPS certificate and key |
+| `--http` | off | Serve plain HTTP, for use behind an HTTPS reverse proxy |
 | `--iface` | every `vmbr*` bridge | Bridges to watch, comma separated |
 | `--db` | `/var/lib/tattle/tattle.db` | Where history is kept |
 | `--retention` | `7` | Days of history to keep |
 | `--local-net` | none | Extra networks to count as inside your network, comma separated |
 | `--pve-dir` | `/etc/pve` | Proxmox config directory |
-| `--demo` | off | Show invented traffic, with no sign-in |
+| `--demo` | off | Show invented traffic, with no sign-in, over plain HTTP |
 | `--demo-login` | off | With `--demo`, also require signing in |
 
 ## How it works

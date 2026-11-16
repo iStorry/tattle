@@ -13,6 +13,7 @@ import (
 	"net/netip"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -23,6 +24,7 @@ import (
 	"github.com/istorry/tattle/internal/demo"
 	"github.com/istorry/tattle/internal/guests"
 	"github.com/istorry/tattle/internal/model"
+	"github.com/istorry/tattle/internal/serve"
 	"github.com/istorry/tattle/internal/store"
 	"github.com/istorry/tattle/internal/tracker"
 	"github.com/istorry/tattle/internal/ui"
@@ -40,6 +42,9 @@ func main() {
 		localNets = flag.String("local-net", "", "extra networks to count as inside your network, comma separated (e.g. 10.20.30.0/24)")
 		demoMode  = flag.Bool("demo", false, "show invented traffic instead of capturing (works on any computer)")
 		demoLogin = flag.Bool("demo-login", false, "with --demo, also require signing in (to try the sign-in pages)")
+		tlsCert   = flag.String("tls-cert", "", "your own HTTPS certificate file (default: one is generated)")
+		tlsKey    = flag.String("tls-key", "", "the private key for --tls-cert")
+		plainHTTP = flag.Bool("http", false, "serve plain HTTP, for use behind a reverse proxy that provides HTTPS")
 		showVer   = flag.Bool("version", false, "print the version and exit")
 	)
 	flag.Usage = func() {
@@ -64,74 +69,138 @@ func main() {
 	}
 	log.SetFlags(log.Ldate | log.Ltime)
 
-	if err := run(*listen, *dbPath, *ifaces, *pveDir, *localNets, *retention, *demoMode, !*demoMode || *demoLogin); err != nil {
+	opts := options{
+		listen: *listen, dbPath: *dbPath, ifaces: *ifaces, pveDir: *pveDir, localNets: *localNets,
+		retention: *retention, demo: *demoMode, requireLogin: !*demoMode || *demoLogin,
+		tlsCert: *tlsCert, tlsKey: *tlsKey,
+		// The demo runs on your own computer, where HTTPS adds nothing.
+		plainHTTP: *plainHTTP || (*demoMode && *tlsCert == ""),
+	}
+	if err := run(opts); err != nil {
 		log.Fatalf("tattle: %v", err)
 	}
 }
 
-func run(listen, dbPath, ifaceFlag, pveDir, localNets string, retention int, demoMode, requireLogin bool) error {
+type options struct {
+	listen, dbPath, ifaces, pveDir, localNets string
+	retention                                 int
+	demo, requireLogin, plainHTTP             bool
+	tlsCert, tlsKey                           string
+}
+
+func run(o options) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	status := &api.Status{Version: version, Demo: demoMode, RetentionDays: retention, Started: time.Now(), Interfaces: []string{}}
+	status := &api.Status{Version: version, Demo: o.demo, RetentionDays: o.retention, Started: time.Now(), Interfaces: []string{}}
 	errc := make(chan error, 8)
 
-	extra, err := parsePrefixes(localNets)
+	extra, err := parsePrefixes(o.localNets)
 	if err != nil {
 		return err
 	}
-	if demoMode {
+	if o.demo {
 		status.LocalNets = append(extra, netip.MustParsePrefix("192.168.1.0/24"))
 	} else {
 		status.LocalNets = append(extra, hostNetworks()...)
 	}
 
+	// Sort out the certificate before capturing anything, so a mistake in
+	// the options is reported straight away.
+	var certs *serve.Certs
+	if !o.plainHTTP {
+		if certs, err = loadCerts(o); err != nil {
+			return err
+		}
+	}
+
 	var st *store.Store
-	if demoMode {
+	if o.demo {
 		if st, err = store.Open(""); err != nil {
 			return err
 		}
 		go func() { errc <- demo.Run(ctx, st) }()
 	} else {
-		if st, err = store.Open(dbPath); err != nil {
+		if st, err = store.Open(o.dbPath); err != nil {
 			return err
 		}
-		if err := startLive(ctx, st, status, ifaceFlag, pveDir, retention, errc); err != nil {
+		if err := startLive(ctx, st, status, o.ifaces, o.pveDir, o.retention, errc); err != nil {
 			st.Close()
 			return err
 		}
 	}
 	defer st.Close()
 
-	srv := &http.Server{
-		Addr:              listen,
-		Handler:           api.New(st, status, ui.Files(), requireLogin),
-		ReadHeaderTimeout: 10 * time.Second,
+	ln, err := net.Listen("tcp", o.listen)
+	if err != nil {
+		return fmt.Errorf("cannot serve the dashboard on %s: %w", o.listen, err)
 	}
+	handler := api.New(st, status, ui.Files(), o.requireLogin)
+	served := make(chan error, 1)
 	go func() {
-		if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-			errc <- err
+		if certs != nil {
+			served <- serve.HTTPS(ctx, ln, certs, handler)
+		} else {
+			served <- serve.HTTP(ctx, ln, handler)
 		}
 	}()
 
-	switch {
-	case demoMode:
+	if o.demo {
 		log.Printf("demo mode: showing invented traffic")
-	default:
+	} else {
 		log.Printf("watching %s", strings.Join(status.Interfaces, ", "))
 	}
-	log.Printf("dashboard on http://%s", displayAddr(listen))
+	switch {
+	case certs == nil:
+		log.Printf("dashboard on http://%s", displayAddr(o.listen))
+		if !o.demo {
+			log.Printf("serving plain HTTP: put an HTTPS reverse proxy in front, or passwords cross the network unencrypted")
+		}
+	case certs.Generated():
+		log.Printf("dashboard on https://%s", displayAddr(o.listen))
+		log.Printf("using a generated certificate, so browsers warn on the first visit; its SHA-256 fingerprint is %s", certs.Fingerprint())
+	default:
+		log.Printf("dashboard on https://%s", displayAddr(o.listen))
+	}
 
 	select {
 	case err := <-errc:
-		if err != nil {
-			return err
+		stop()
+		<-served
+		return err
+	case err := <-served:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
 		}
-	case <-ctx.Done():
+		return err
 	}
-	shutdown, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	return srv.Shutdown(shutdown)
+}
+
+// loadCerts returns the owner's certificate if one was given, and
+// otherwise one generated for this host and kept beside the database.
+func loadCerts(o options) (*serve.Certs, error) {
+	if (o.tlsCert == "") != (o.tlsKey == "") {
+		return nil, errors.New("--tls-cert and --tls-key must be given together")
+	}
+	if o.tlsCert != "" {
+		return serve.Load(o.tlsCert, o.tlsKey)
+	}
+	names := []string{"localhost"}
+	if host, err := os.Hostname(); err == nil && host != "" {
+		names = []string{host, "localhost"}
+	}
+	ips := []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback}
+	addrs, _ := net.InterfaceAddrs()
+	for _, a := range addrs {
+		if ipn, ok := a.(*net.IPNet); ok && !ipn.IP.IsLoopback() && !ipn.IP.IsLinkLocalUnicast() {
+			ips = append(ips, ipn.IP)
+		}
+	}
+	certs, err := serve.SelfSigned(filepath.Join(filepath.Dir(o.dbPath), "tls"), names, ips)
+	if err != nil {
+		return nil, fmt.Errorf("creating an HTTPS certificate: %w (use --http to serve without one)", err)
+	}
+	return certs, nil
 }
 
 // resetPassword is for an owner who has forgotten the password. It needs
