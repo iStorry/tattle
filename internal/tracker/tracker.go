@@ -34,8 +34,33 @@ type flowKey struct {
 	proto          uint8
 }
 
+// view is one place a connection can be observed. A connection the host
+// forwards crosses the watched bridges twice, before and after the host,
+// so it has two views. Each view sees all of a direction's packets or, when
+// address translation makes them look like another connection there, none.
+// The true total for a direction is therefore the largest any view counted,
+// which stays right whichever view a packet happens to be read from first.
+type view struct {
+	iface int
+	// The host's network card is on this side, but the address on this side
+	// is not the host's: the host is passing the traffic along.
+	hostForClient, hostForServer bool
+}
+
+// viewCount is what one view has seen of a connection since it began.
+type viewCount struct {
+	view                       view
+	up, down, upPkts, downPkts int64
+}
+
+const maxViews = 4
+
 type flow struct {
 	clientMAC, serverMAC decode.MAC
+	views                []viewCount
+	direct               int  // most ends shown by a guest's own network card in any view
+	fwdClient, fwdServer bool // the host passes this connection along, in some view
+	sniffView            int  // the view whose packets are searched for a name, or -1
 	domain               string
 	named                bool // domain came from the connection itself, not from DNS
 	sniffed              int
@@ -44,9 +69,10 @@ type flow struct {
 	isNew                bool
 	last                 time.Time
 
-	// Totals since the last flush.
-	up, down, pkts int64
-	deltaFirst     time.Time
+	// What has already been reported, and whether there is more.
+	sentUp, sentDown, sentPkts int64
+	dirty                      bool
+	deltaFirst                 time.Time
 }
 
 type addrPair struct{ client, server netip.Addr }
@@ -272,20 +298,18 @@ func (t *Tracker) Handle(p decode.Packet, wireLen int, now time.Time) {
 		rev := flowKey{p.DstIP, p.SrcIP, p.DstPort, p.SrcPort, p.Proto}
 		if f = t.flows[rev]; f != nil {
 			fromClient = false
+			key = rev
 		}
 	}
-	if f == nil {
+	created := f == nil
+	if created {
 		if len(t.flows) >= maxFlows {
 			return
 		}
-		fromClient = srcIsClient(p)
-		f = &flow{isNew: true}
-		if fromClient {
-			f.clientMAC, f.serverMAC = p.SrcMAC, p.DstMAC
-		} else {
+		if fromClient = srcIsClient(p); !fromClient {
 			key = flowKey{p.DstIP, p.SrcIP, p.DstPort, p.SrcPort, p.Proto}
-			f.clientMAC, f.serverMAC = p.DstMAC, p.SrcMAC
 		}
+		f = &flow{isNew: true, sniffView: -1}
 		if name, ok := t.dnsPair[addrPair{key.client, key.server}]; ok {
 			f.domain = name
 		} else {
@@ -294,16 +318,54 @@ func (t *Tracker) Handle(p decode.Packet, wireLen int, now time.Time) {
 		t.flows[key] = f
 	}
 
-	if f.pkts == 0 {
-		f.deltaFirst = now
+	// Count the packet in the view it was seen in.
+	clientMAC, serverMAC := p.SrcMAC, p.DstMAC
+	if !fromClient {
+		clientMAC, serverMAC = p.DstMAC, p.SrcMAC
 	}
-	f.pkts++
+	v := view{
+		iface:         p.Iface,
+		hostForClient: t.hostForwards(clientMAC, key.client),
+		hostForServer: t.hostForwards(serverMAC, key.server),
+	}
+	vi := -1
+	for i := range f.views {
+		if f.views[i].view == v {
+			vi = i
+			break
+		}
+	}
+	if vi < 0 {
+		if len(f.views) >= maxViews {
+			return
+		}
+		f.views = append(f.views, viewCount{view: v})
+		vi = len(f.views) - 1
+		f.fwdClient = f.fwdClient || v.hostForClient
+		f.fwdServer = f.fwdServer || v.hostForServer
+		// The view that shows a guest's own network card identifies the
+		// guest even before its address is known.
+		if direct := t.guestCard(clientMAC) + t.guestCard(serverMAC); vi == 0 || direct > f.direct {
+			f.direct, f.clientMAC, f.serverMAC = direct, clientMAC, serverMAC
+		}
+	}
+	if !f.dirty {
+		f.dirty, f.deltaFirst = true, now
+	}
 	f.last = now
-	if fromClient {
-		f.up += int64(wireLen)
+	if vc := &f.views[vi]; fromClient {
+		vc.up += int64(wireLen)
+		vc.upPkts++
 	} else {
-		f.down += int64(wireLen)
+		vc.down += int64(wireLen)
+		vc.downPkts++
 	}
+	// Search one view's packets for the name, so a packet seen in two views
+	// is not fed in twice.
+	if fromClient && len(p.Payload) > 0 && f.sniffView < 0 {
+		f.sniffView = vi
+	}
+	sniff := vi == f.sniffView
 
 	if p.Proto == decode.ProtoTCP {
 		if p.TCPFlags&(decode.FlagFIN|decode.FlagRST) != 0 {
@@ -311,7 +373,7 @@ func (t *Tracker) Handle(p decode.Packet, wireLen int, now time.Time) {
 		}
 		// The hostname is in the first data the client sends: the TLS
 		// ClientHello for HTTPS, or the Host header for plain HTTP.
-		if fromClient && !f.named && len(p.Payload) > 0 {
+		if sniff && fromClient && !f.named && len(p.Payload) > 0 {
 			name := ""
 			switch {
 			case f.hello != nil:
@@ -343,7 +405,7 @@ func (t *Tracker) Handle(p decode.Packet, wireLen int, now time.Time) {
 
 	// HTTP/3: the same ClientHello, inside the connection's first QUIC
 	// packets. Only the client's opening packets are tried.
-	if p.Proto == decode.ProtoUDP && fromClient && !f.named && !p.Truncated && f.sniffed < sniffPackets {
+	if p.Proto == decode.ProtoUDP && sniff && fromClient && !f.named && !p.Truncated && f.sniffed < sniffPackets {
 		f.sniffed++
 		frags, ok := decode.QUICClientInitial(p.Payload)
 		if ok && f.hello == nil && t.hellos < maxHellosAtOnce {
@@ -415,6 +477,52 @@ var commonServicePorts = map[uint16]bool{
 
 func servicePort(p uint16) bool { return (p > 0 && p < 1024) || commonServicePorts[p] }
 
+// hostForwards reports whether a frame's network card is the host's while
+// the address is someone else's, meaning the host is routing the traffic.
+func (t *Tracker) hostForwards(mac decode.MAC, ip netip.Addr) bool {
+	return t.macOwner[mac] == model.HostID && t.ipOwner[ip] != model.HostID
+}
+
+// guestCard is 1 if the network card belongs to a VM or container.
+func (t *Tracker) guestCard(mac decode.MAC) int {
+	if id := t.macOwner[mac]; id != "" && id != model.HostID {
+		return 1
+	}
+	return 0
+}
+
+// natKey identifies a connection by the parts that address translation on
+// the host leaves alone.
+type natKey struct {
+	proto uint8
+	ip    netip.Addr
+	a, b  uint16
+}
+
+// natCopies finds connections that are the host's translated copy of a
+// connection already counted for a guest.
+//
+// Outgoing (masquerade): the guest's connection reaches the host's card on
+// its way to the internet, and leaves again from the host's own address
+// with the same source port. Incoming (port forward): a connection arrives
+// at the host's address and is passed to the guest with the caller's
+// address and port unchanged.
+func (t *Tracker) natCopies() (out, in map[natKey]bool) {
+	out, in = map[natKey]bool{}, map[natKey]bool{}
+	for k, f := range t.flows {
+		if k.proto != decode.ProtoTCP && k.proto != decode.ProtoUDP {
+			continue // without ports there is nothing reliable to match on
+		}
+		if f.fwdServer {
+			out[natKey{k.proto, k.server, k.cport, k.sport}] = true
+		}
+		if f.fwdClient {
+			in[natKey{k.proto, k.client, k.cport, 0}] = true
+		}
+	}
+	return out, in
+}
+
 // owner returns the machine an endpoint belongs to, or "".
 func (t *Tracker) owner(ip netip.Addr, mac decode.MAC) string {
 	if id, ok := t.ipOwner[ip]; ok {
@@ -450,10 +558,26 @@ func (t *Tracker) Flush(now time.Time) []model.FlowDelta {
 	defer t.mu.Unlock()
 
 	agg := map[aggKey]*model.FlowDelta{}
+	natOut, natIn := t.natCopies()
 	for k, f := range t.flows {
-		if f.pkts > 0 {
+		if f.dirty {
+			// Per direction, the view that saw the most saw all of it.
+			var up, down, upPkts, downPkts int64
+			for _, vc := range f.views {
+				up, down = max(up, vc.up), max(down, vc.down)
+				upPkts, downPkts = max(upPkts, vc.upPkts), max(downPkts, vc.downPkts)
+			}
+			pkts := upPkts + downPkts
 			cid, sid := t.owner(k.client, f.clientMAC), t.owner(k.server, f.serverMAC)
-			if cid != "" || sid != "" {
+			natCopy := false
+			if !f.fwdClient && !f.fwdServer {
+				// The guest's connection after masquerading, or a port
+				// forward before it reaches the guest.
+				natCopy = (cid == model.HostID && natOut[natKey{k.proto, k.server, k.cport, k.sport}]) ||
+					(sid == model.HostID && natIn[natKey{k.proto, k.client, k.cport, 0}])
+			}
+			known := cid != "" || sid != ""
+			if known && !natCopy {
 				bucket := f.last.Unix() / 60 * 60
 				ak := aggKey{bucket, k.client, k.server, k.sport, k.proto, f.domain}
 				d := agg[ak]
@@ -466,16 +590,22 @@ func (t *Tracker) Flush(now time.Time) []model.FlowDelta {
 					}
 					agg[ak] = d
 				}
-				d.BytesUp += f.up
-				d.BytesDown += f.down
-				d.Packets += f.pkts
+				d.BytesUp += up - f.sentUp
+				d.BytesDown += down - f.sentDown
+				d.Packets += pkts - f.sentPkts
 				if f.isNew {
 					d.Conns++
 				}
 				d.FirstSeen = min(d.FirstSeen, f.deltaFirst.UnixMilli())
 				d.LastSeen = max(d.LastSeen, f.last.UnixMilli())
 			}
-			f.up, f.down, f.pkts, f.isNew = 0, 0, 0, false
+			// Traffic that cannot be attributed yet is kept, not discarded:
+			// the machine's address may be learned a moment later, or a
+			// better view of the connection may arrive.
+			if known || natCopy {
+				f.sentUp, f.sentDown, f.sentPkts = up, down, pkts
+				f.dirty, f.isNew = false, false
+			}
 		}
 		idle := otherIdle
 		if k.proto == decode.ProtoTCP {

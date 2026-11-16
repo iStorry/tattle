@@ -1,6 +1,9 @@
 // Package model holds the types shared between the collector, the store and the API.
 package model
 
+// HostID is the machine ID of the Proxmox host itself.
+const HostID = "host"
+
 // Machine is something on the Proxmox host whose traffic Tattle attributes:
 // a VM, a container, or the host itself.
 type Machine struct {

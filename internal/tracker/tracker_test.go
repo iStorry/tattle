@@ -16,6 +16,7 @@ var (
 	ctMAC     = decode.MAC{0xbc, 0x24, 0x11, 0, 2, 0}
 	routerVM  = decode.MAC{0xbc, 0x24, 0x11, 0, 3, 0}
 	gateway   = decode.MAC{0x00, 0x11, 0x22, 0x33, 0x44, 0x55}
+	hostMAC   = decode.MAC{0xbc, 0x24, 0x11, 0, 0, 0x10}
 	laptopMAC = decode.MAC{0x00, 0xaa, 0xbb, 0xcc, 0xdd, 0xee}
 	t0        = time.Unix(1_800_000_000, 0)
 )
@@ -28,6 +29,7 @@ func newTracker() *Tracker {
 		{ID: "vm-100", MACs: []string{vmMAC.String()}},
 		{ID: "ct-200", MACs: []string{ctMAC.String()}, IPs: []string{"192.168.1.53"}},
 		{ID: "vm-300", MACs: []string{routerVM.String()}},
+		{ID: model.HostID, MACs: []string{hostMAC.String()}, IPs: []string{"192.168.1.10", "10.10.10.1"}},
 	})
 	return tr
 }
@@ -318,5 +320,161 @@ func TestNameIsReadFromHTTP3(t *testing.T) {
 	udp(tr, 54003, make([]byte, 1200))
 	if tr.hellos != 0 {
 		t.Errorf("buffered non-QUIC data")
+	}
+}
+
+// Interface numbers for a host with an outside bridge and an internal one.
+const (
+	outside  = 0
+	internal = 1
+)
+
+// on returns a packet as seen on the given bridge.
+func on(iface int, p decode.Packet) decode.Packet {
+	p.Iface = iface
+	return p
+}
+
+func TestRoutedConnectionIsCountedOnce(t *testing.T) {
+	// The guest's packet crosses the internal bridge to the host, and the
+	// host sends it on, unchanged, across the outside bridge.
+	inner := func(flags uint8) decode.Packet {
+		return on(internal, pkt(vmMAC, hostMAC, "10.10.10.20", "198.51.100.30", decode.ProtoTCP, 51000, 443, flags, nil))
+	}
+	outer := func(flags uint8) decode.Packet {
+		return on(outside, pkt(hostMAC, gateway, "10.10.10.20", "198.51.100.30", decode.ProtoTCP, 51000, 443, flags, nil))
+	}
+	replyOuter := on(outside, pkt(gateway, hostMAC, "198.51.100.30", "10.10.10.20", decode.ProtoTCP, 443, 51000, decode.FlagACK, nil))
+	replyInner := on(internal, pkt(hostMAC, vmMAC, "198.51.100.30", "10.10.10.20", decode.ProtoTCP, 443, 51000, decode.FlagACK, nil))
+
+	orders := map[string][]decode.Packet{
+		"inside first":  {inner(decode.FlagSYN), outer(decode.FlagSYN), replyOuter, replyInner},
+		"outside first": {outer(decode.FlagSYN), inner(decode.FlagSYN), replyInner, replyOuter},
+	}
+	for name, packets := range orders {
+		tr := newTracker()
+		for _, p := range packets {
+			size := 100
+			if p.SrcPort == 443 {
+				size = 1000
+			}
+			tr.Handle(p, size, t0)
+		}
+		d := only(t, tr.Flush(t0))
+		if d.ClientID != "vm-100" || d.BytesUp != 100 || d.BytesDown != 1000 || d.Packets != 2 || d.Conns != 1 {
+			t.Errorf("%s: %+v", name, d)
+		}
+	}
+}
+
+func TestRoutingBetweenGuestsOnOneBridgeIsCountedOnce(t *testing.T) {
+	// Two VLANs on the same bridge: the packet enters the host and leaves
+	// again on the same interface.
+	tr := newTracker()
+	tr.Handle(pkt(vmMAC, hostMAC, "10.10.10.20", "192.168.1.53", decode.ProtoTCP, 51000, 80, decode.FlagSYN, nil), 100, t0)
+	tr.Handle(pkt(hostMAC, ctMAC, "10.10.10.20", "192.168.1.53", decode.ProtoTCP, 51000, 80, decode.FlagSYN, nil), 100, t0)
+	tr.Handle(pkt(ctMAC, hostMAC, "192.168.1.53", "10.10.10.20", decode.ProtoTCP, 80, 51000, decode.FlagACK, nil), 700, t0)
+	tr.Handle(pkt(hostMAC, vmMAC, "192.168.1.53", "10.10.10.20", decode.ProtoTCP, 80, 51000, decode.FlagACK, nil), 700, t0)
+	d := only(t, tr.Flush(t0))
+	if d.ClientID != "vm-100" || d.ServerID != "ct-200" || d.BytesUp != 100 || d.BytesDown != 700 {
+		t.Errorf("got %+v", d)
+	}
+}
+
+func TestMasqueradedConnectionIsNotAlsoCountedForTheHost(t *testing.T) {
+	tr := newTracker()
+	// The guest's connection, then the same connection leaving from the
+	// host's address with the source port kept.
+	tr.Handle(on(internal, pkt(vmMAC, hostMAC, "10.10.10.20", "198.51.100.30", decode.ProtoTCP, 51000, 443, decode.FlagSYN, nil)), 100, t0)
+	tr.Handle(on(outside, pkt(hostMAC, gateway, "192.168.1.10", "198.51.100.30", decode.ProtoTCP, 51000, 443, decode.FlagSYN, nil)), 100, t0)
+	tr.Handle(on(outside, pkt(gateway, hostMAC, "198.51.100.30", "192.168.1.10", decode.ProtoTCP, 443, 51000, decode.FlagACK, nil)), 900, t0)
+	tr.Handle(on(internal, pkt(hostMAC, vmMAC, "198.51.100.30", "10.10.10.20", decode.ProtoTCP, 443, 51000, decode.FlagACK, nil)), 900, t0)
+	// Something the host really did itself, to the same place.
+	tr.Handle(on(outside, pkt(hostMAC, gateway, "192.168.1.10", "198.51.100.30", decode.ProtoTCP, 40123, 443, decode.FlagSYN, nil)), 60, t0)
+
+	got := map[string]model.FlowDelta{}
+	for _, d := range tr.Flush(t0) {
+		got[d.ClientID] = d
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %+v", got)
+	}
+	if d := got["vm-100"]; d.BytesUp != 100 || d.BytesDown != 900 {
+		t.Errorf("guest: %+v", d)
+	}
+	if d := got[model.HostID]; d.BytesUp != 60 || d.BytesDown != 0 || d.Conns != 1 {
+		t.Errorf("host's own connection: %+v", d)
+	}
+
+	// The copy stays out on later flushes too.
+	tr.Handle(on(outside, pkt(gateway, hostMAC, "198.51.100.30", "192.168.1.10", decode.ProtoTCP, 443, 51000, decode.FlagACK, nil)), 500, t0)
+	tr.Handle(on(internal, pkt(hostMAC, vmMAC, "198.51.100.30", "10.10.10.20", decode.ProtoTCP, 443, 51000, decode.FlagACK, nil)), 500, t0)
+	if d := only(t, tr.Flush(t0)); d.ClientID != "vm-100" || d.BytesDown != 500 {
+		t.Errorf("later flush: %+v", d)
+	}
+}
+
+func TestPortForwardIsCountedForTheGuestOnly(t *testing.T) {
+	tr := newTracker()
+	// A laptop connects to port 8080 on the host, which forwards it to
+	// port 80 on a container, keeping the laptop's address and port.
+	tr.Handle(on(outside, pkt(laptopMAC, hostMAC, "192.168.1.42", "192.168.1.10", decode.ProtoTCP, 60000, 8080, decode.FlagSYN, nil)), 100, t0)
+	tr.Handle(on(internal, pkt(hostMAC, ctMAC, "192.168.1.42", "192.168.1.53", decode.ProtoTCP, 60000, 80, decode.FlagSYN, nil)), 100, t0)
+	d := only(t, tr.Flush(t0))
+	if d.ServerID != "ct-200" || d.ServerPort != 80 || d.ClientIP != "192.168.1.42" || d.BytesUp != 100 {
+		t.Errorf("got %+v", d)
+	}
+
+	// A connection to the host itself is still the host's.
+	tr.Handle(on(outside, pkt(laptopMAC, hostMAC, "192.168.1.42", "192.168.1.10", decode.ProtoTCP, 60001, 8006, decode.FlagSYN, nil)), 100, t0)
+	if d := only(t, tr.Flush(t0)); d.ServerID != model.HostID || d.ServerPort != 8006 {
+		t.Errorf("host service: %+v", d)
+	}
+}
+
+// With the kernel's bridge firewall hooks loaded (as on Docker hosts, and on
+// Proxmox when its firewall is on), addresses are translated before a
+// bridge's packets are captured, so one view can see a connection's two
+// directions under different addresses.
+func TestTranslationBeforeCapture(t *testing.T) {
+	// Masquerade: replies show up on the outside bridge already addressed
+	// to the guest, while its requests leave there from the host's address.
+	tr := newTracker()
+	tr.Handle(on(internal, pkt(vmMAC, hostMAC, "10.10.10.20", "198.51.100.30", decode.ProtoTCP, 51000, 443, decode.FlagSYN, nil)), 100, t0)
+	tr.Handle(on(outside, pkt(hostMAC, gateway, "192.168.1.10", "198.51.100.30", decode.ProtoTCP, 51000, 443, decode.FlagSYN, nil)), 100, t0)
+	tr.Handle(on(outside, pkt(gateway, hostMAC, "198.51.100.30", "10.10.10.20", decode.ProtoTCP, 443, 51000, decode.FlagACK, nil)), 900, t0)
+	tr.Handle(on(internal, pkt(hostMAC, vmMAC, "198.51.100.30", "10.10.10.20", decode.ProtoTCP, 443, 51000, decode.FlagACK, nil)), 900, t0)
+	if d := only(t, tr.Flush(t0)); d.ClientID != "vm-100" || d.BytesUp != 100 || d.BytesDown != 900 || d.Packets != 2 {
+		t.Errorf("masquerade: %+v", d)
+	}
+
+	// Port forward: the guest's request is captured already re-addressed to
+	// the container, and the reply already re-addressed from the host.
+	const other = 2
+	tr = newTracker()
+	tr.Handle(on(internal, pkt(vmMAC, hostMAC, "10.10.10.20", "192.168.1.53", decode.ProtoTCP, 60000, 80, decode.FlagSYN, nil)), 100, t0)
+	tr.Handle(on(other, pkt(hostMAC, ctMAC, "10.10.10.20", "192.168.1.53", decode.ProtoTCP, 60000, 80, decode.FlagSYN, nil)), 100, t0)
+	tr.Handle(on(other, pkt(ctMAC, hostMAC, "192.168.1.53", "10.10.10.20", decode.ProtoTCP, 80, 60000, decode.FlagACK, nil)), 900, t0)
+	tr.Handle(on(internal, pkt(hostMAC, vmMAC, "10.10.10.1", "10.10.10.20", decode.ProtoTCP, 8080, 60000, decode.FlagACK, nil)), 900, t0)
+	if d := only(t, tr.Flush(t0)); d.ClientID != "vm-100" || d.ServerID != "ct-200" || d.ServerPort != 80 || d.BytesUp != 100 || d.BytesDown != 900 {
+		t.Errorf("port forward: %+v", d)
+	}
+}
+
+func TestPacketsSplitAcrossFlushesAreNotCountedTwice(t *testing.T) {
+	// One view's copy of a packet is read just before a flush and the other
+	// view's copy just after.
+	tr := newTracker()
+	tr.Handle(on(outside, pkt(hostMAC, gateway, "10.10.10.20", "198.51.100.30", decode.ProtoTCP, 51000, 443, decode.FlagSYN, nil)), 100, t0)
+	first := tr.Flush(t0)
+	tr.Handle(on(internal, pkt(vmMAC, hostMAC, "10.10.10.20", "198.51.100.30", decode.ProtoTCP, 51000, 443, decode.FlagSYN, nil)), 100, t0)
+	second := tr.Flush(t0)
+	var up, conns int64
+	for _, d := range append(first, second...) {
+		up += d.BytesUp
+		conns += d.Conns
+	}
+	if up != 100 || conns > 1 {
+		t.Errorf("sent = %d bytes over %d connections, want 100 over at most 1", up, conns)
 	}
 }

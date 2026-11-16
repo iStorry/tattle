@@ -83,10 +83,12 @@ many bytes moved in each direction. Totals are stored per minute in SQLite.
 
 ## Known limitations
 
-- **Routed or NAT setups count some traffic twice.** If guests sit on an
-  internal bridge and the host forwards their traffic out through another
-  watched bridge, the same bytes show once for the guest and once for the
-  host. Use `--iface` to watch only the internal bridge.
+- **Masqueraded connections can occasionally show for the host as well.**
+  When the host routes or masquerades guest traffic, Tattle counts it once,
+  for the guest. It recognises the host's translated copy by its source
+  port, so on the rare occasion the host has to pick a different port, that
+  connection also appears under the host.
+- **A guest's ping through a masquerading host** is counted for both.
 - **Tested on a simulated bridge, not yet on a real Proxmox host.** Capture,
   naming and attribution were verified in a Linux container with a bridge and
   a veth guest wired the way Proxmox wires containers.

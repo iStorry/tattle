@@ -265,6 +265,9 @@ func cleanHost(s string) string {
 	if s == "" || len(s) > 253 {
 		return ""
 	}
+	if _, err := netip.ParseAddr(s); err == nil {
+		return "" // an address is not a name
+	}
 	out := make([]byte, len(s))
 	for i := 0; i < len(s); i++ {
 		c := s[i]

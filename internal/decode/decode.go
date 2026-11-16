@@ -57,6 +57,7 @@ type Packet struct {
 	Seq              uint32 // TCP sequence number of the first payload byte
 	Payload          []byte // transport payload; may be cut short by the capture length
 	Truncated        bool   // the capture did not keep the whole frame; set by the caller
+	Iface            int    // which capture the frame came from; set by the caller
 
 	// Announce is an address that SrcMAC claims to own, taken from ARP or
 	// IPv6 neighbour discovery. It is the reliable way to learn which IP

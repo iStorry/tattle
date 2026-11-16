@@ -170,12 +170,13 @@ func startLive(ctx context.Context, st *store.Store, status *api.Status, ifaceFl
 	}
 	reload()
 
-	for _, src := range sources {
+	for i, src := range sources {
 		go func() {
 			errc <- src.Run(ctx, func(frame []byte, wireLen int) {
 				status.Packets.Add(1)
 				if p, ok := decode.Decode(frame); ok {
 					p.Truncated = wireLen > len(frame)
+					p.Iface = i
 					tr.Handle(p, wireLen, time.Now())
 				}
 			})
@@ -291,7 +292,7 @@ func hostMachine(watched []string) model.Machine {
 	if err != nil {
 		name = "Proxmox host"
 	}
-	m := model.Machine{ID: "host", Kind: "host", Name: name, Node: name, MACs: []string{}, IPs: []string{}}
+	m := model.Machine{ID: model.HostID, Kind: "host", Name: name, Node: name, MACs: []string{}, IPs: []string{}}
 	for _, w := range watched {
 		if ifi, err := net.InterfaceByName(w); err == nil && len(ifi.HardwareAddr) == 6 {
 			m.MACs = append(m.MACs, ifi.HardwareAddr.String())

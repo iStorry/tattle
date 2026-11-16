@@ -113,6 +113,9 @@ Download a file of known size, around 100 MB, inside a guest.
 - [ ] **4a.** "Received" for that destination is the file size or slightly
       more (a few percent), not double.
 - [ ] **4b.** The same amount is **not** also added to the host.
+- [ ] **4c. Guests behind host NAT.** If any guest reaches the internet
+      through an internal bridge that the host masquerades or routes, repeat
+      4a and 4b in it.
 
 ## 5. Local versus internet
 
@@ -145,7 +148,6 @@ systemctl restart tattle
 These are known and already on the roadmap. Note them only if they are worse
 than described.
 
-- Guests behind host NAT count some traffic twice (roadmap step 5).
 - Docker containers inside a VM appear as the VM.
 
 ## What to send back

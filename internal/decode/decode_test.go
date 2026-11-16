@@ -179,6 +179,7 @@ func TestParseHTTPHost(t *testing.T) {
 		"GET / HTTP/1.1\r\nAccept: */*\r\n\r\nHost: body.test\r\n":           "",
 		"GET / HTTP/1.1\r\nHost: [::1]:80\r\n\r\n":                           "",
 		"HTTP/1.1 200 OK\r\nHost: response.test\r\n\r\n":                     "",
+		"GET / HTTP/1.1\r\nHost: 192.168.1.10:8080\r\n\r\n":                  "",
 		"GET / HTTP/1.1\r\nHost: trunc":                                      "trunc",
 	}
 	for in, want := range cases {
