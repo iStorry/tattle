@@ -19,11 +19,10 @@ import (
 // Status describes what the collector is doing. The counters are updated by
 // the capture loop while the server reads them.
 type Status struct {
-	Version       string
-	Demo          bool
-	Interfaces    []string
-	RetentionDays int
-	Started       time.Time
+	Version    string
+	Demo       bool
+	Interfaces []string
+	Started    time.Time
 	// LocalNets are the networks the host is directly connected to, plus any
 	// the user added. Addresses in them count as "inside your network".
 	LocalNets []netip.Prefix
@@ -92,6 +91,13 @@ var openPaths = map[string]bool{
 	"/api/auth/logout": true,
 }
 
+// Settings returns the settings currently in effect.
+func (s *Server) Settings() store.Settings {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.settings
+}
+
 // apply makes settings take effect: the host's own networks and the ones
 // the user added together define "inside your network".
 func (s *Server) apply(settings store.Settings, custom []netip.Prefix) {
@@ -147,7 +153,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"version":       s.status.Version,
 		"demo":          s.status.Demo,
 		"interfaces":    s.status.Interfaces,
-		"retentionDays": s.status.RetentionDays,
+		"retentionDays": s.Settings().RetentionDays,
 		"localNetworks": s.status.LocalNets,
 		"started":       s.status.Started.UnixMilli(),
 		"now":           time.Now().UnixMilli(),
@@ -212,6 +218,13 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		fail(w, "saving settings", err)
 		return
 	}
+	shorter := settings.RetentionDays < s.Settings().RetentionDays
 	s.apply(settings, custom)
+	if shorter {
+		// Keeping less history takes effect now, not at the next clean-up.
+		if err := s.store.Prune(time.Now().AddDate(0, 0, -settings.RetentionDays)); err != nil {
+			log.Printf("api: removing old history: %v", err)
+		}
+	}
 	writeJSON(w, s.settingsResponse(), nil)
 }

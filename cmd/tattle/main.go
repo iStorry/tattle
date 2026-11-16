@@ -38,8 +38,6 @@ func main() {
 		dbPath    = flag.String("db", "/var/lib/tattle/tattle.db", "where to keep history")
 		ifaces    = flag.String("iface", "", "bridges to watch, comma separated (default: every vmbr* bridge)")
 		pveDir    = flag.String("pve-dir", "/etc/pve", "Proxmox config directory")
-		retention = flag.Int("retention", 7, "days of history to keep")
-		localNets = flag.String("local-net", "", "extra networks to count as inside your network, comma separated (e.g. 10.20.30.0/24)")
 		demoMode  = flag.Bool("demo", false, "show invented traffic instead of capturing (works on any computer)")
 		demoLogin = flag.Bool("demo-login", false, "with --demo, also require signing in (to try the sign-in pages)")
 		tlsCert   = flag.String("tls-cert", "", "your own HTTPS certificate file (default: one is generated)")
@@ -70,8 +68,8 @@ func main() {
 	log.SetFlags(log.Ldate | log.Ltime)
 
 	opts := options{
-		listen: *listen, dbPath: *dbPath, ifaces: *ifaces, pveDir: *pveDir, localNets: *localNets,
-		retention: *retention, demo: *demoMode, requireLogin: !*demoMode || *demoLogin,
+		listen: *listen, dbPath: *dbPath, ifaces: *ifaces, pveDir: *pveDir,
+		demo: *demoMode, requireLogin: !*demoMode || *demoLogin,
 		tlsCert: *tlsCert, tlsKey: *tlsKey,
 		// The demo runs on your own computer, where HTTPS adds nothing.
 		plainHTTP: *plainHTTP || (*demoMode && *tlsCert == ""),
@@ -82,28 +80,23 @@ func main() {
 }
 
 type options struct {
-	listen, dbPath, ifaces, pveDir, localNets string
-	retention                                 int
-	demo, requireLogin, plainHTTP             bool
-	tlsCert, tlsKey                           string
+	listen, dbPath, ifaces, pveDir string
+	demo, requireLogin, plainHTTP  bool
+	tlsCert, tlsKey                string
 }
 
 func run(o options) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	status := &api.Status{Version: version, Demo: o.demo, RetentionDays: o.retention, Started: time.Now(), Interfaces: []string{}}
+	status := &api.Status{Version: version, Demo: o.demo, Started: time.Now(), Interfaces: []string{}}
 	errc := make(chan error, 8)
-
-	extra, err := parsePrefixes(o.localNets)
-	if err != nil {
-		return err
-	}
 	if o.demo {
-		status.LocalNets = append(extra, netip.MustParsePrefix("192.168.1.0/24"))
+		status.LocalNets = []netip.Prefix{netip.MustParsePrefix("192.168.1.0/24")}
 	} else {
-		status.LocalNets = append(extra, hostNetworks()...)
+		status.LocalNets = hostNetworks()
 	}
+	var err error
 
 	// Sort out the certificate before capturing anything, so a mistake in
 	// the options is reported straight away.
@@ -124,7 +117,7 @@ func run(o options) error {
 		if st, err = store.Open(o.dbPath); err != nil {
 			return err
 		}
-		if err := startLive(ctx, st, status, o.ifaces, o.pveDir, o.retention, errc); err != nil {
+		if err := startLive(ctx, st, status, o.ifaces, o.pveDir, errc); err != nil {
 			st.Close()
 			return err
 		}
@@ -236,7 +229,7 @@ func displayAddr(listen string) string {
 
 // startLive opens the captures and starts the background loops that feed
 // the store.
-func startLive(ctx context.Context, st *store.Store, status *api.Status, ifaceFlag, pveDir string, retention int, errc chan<- error) error {
+func startLive(ctx context.Context, st *store.Store, status *api.Status, ifaceFlag, pveDir string, errc chan<- error) error {
 	names, err := pickInterfaces(ifaceFlag)
 	if err != nil {
 		return err
@@ -291,7 +284,15 @@ func startLive(ctx context.Context, st *store.Store, status *api.Status, ifaceFl
 		defer flush.Stop()
 		defer refresh.Stop()
 		defer prune.Stop()
-		cutoff := func() time.Time { return time.Now().AddDate(0, 0, -retention) }
+		// How long to keep history is a setting, read each time so a
+		// change needs no restart.
+		cutoff := func() time.Time {
+			settings, err := st.LoadSettings()
+			if err != nil {
+				settings = store.DefaultSettings()
+			}
+			return time.Now().AddDate(0, 0, -settings.RetentionDays)
+		}
 		if err := st.Prune(cutoff()); err != nil {
 			log.Printf("removing old history: %v", err)
 		}
@@ -349,21 +350,6 @@ func pickInterfaces(flagValue string) ([]string, error) {
 			strings.Join(seen, ", "))
 	}
 	return names, nil
-}
-
-func parsePrefixes(list string) ([]netip.Prefix, error) {
-	var out []netip.Prefix
-	for _, s := range strings.Split(list, ",") {
-		if s = strings.TrimSpace(s); s == "" {
-			continue
-		}
-		p, err := netip.ParsePrefix(s)
-		if err != nil {
-			return nil, fmt.Errorf("--local-net %q is not a network like 10.20.30.0/24", s)
-		}
-		out = append(out, p.Masked())
-	}
-	return out, nil
 }
 
 // hostNetworks returns the networks the host has an address on. If the host

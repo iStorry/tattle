@@ -63,7 +63,8 @@ trust, accuracy and a clean install come before new features.
 
 ### 10. One place for configuration
 - Remove `--local-net` and `--retention`; both move to Settings.
-- Keep only the flags needed to start: `--listen`, `--db`, `--iface`, `--demo`.
+- Keep only the flags needed to start: where to listen, the HTTPS
+  certificate, the database, the bridges, and demo mode.
 - **Done when:** every option exists in exactly one place.
 
 ## Phase 3: The product

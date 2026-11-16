@@ -567,6 +567,10 @@ path.sent {
   max-width: 320px;
 }
 
+.settings .input.days {
+  max-width: 110px;
+}
+
 .settings .heading a {
   font-size: 13.5px;
 }

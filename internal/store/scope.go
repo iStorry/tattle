@@ -103,10 +103,19 @@ type Settings struct {
 	PrivateIsLocal bool `json:"privateIsLocal"`
 	// Show is the scope the dashboard opens with.
 	Show string `json:"show"`
+	// RetentionDays is how many days of history are kept.
+	RetentionDays int `json:"retentionDays"`
 }
 
+// Limits on RetentionDays.
+const (
+	MinRetentionDays     = 1
+	MaxRetentionDays     = 90
+	DefaultRetentionDays = 7
+)
+
 func DefaultSettings() Settings {
-	return Settings{LocalNets: []string{}, PrivateIsLocal: true, Show: ScopeAll}
+	return Settings{LocalNets: []string{}, PrivateIsLocal: true, Show: ScopeAll, RetentionDays: DefaultRetentionDays}
 }
 
 // Validate tidies the settings and returns LocalNets parsed. The error is
@@ -116,6 +125,9 @@ func (st *Settings) Validate() ([]netip.Prefix, error) {
 	case ScopeAll, ScopeInternet, ScopeLocal:
 	default:
 		return nil, fmt.Errorf("unknown choice %q for what to show", st.Show)
+	}
+	if st.RetentionDays < MinRetentionDays || st.RetentionDays > MaxRetentionDays {
+		return nil, fmt.Errorf("history can be kept for %d to %d days", MinRetentionDays, MaxRetentionDays)
 	}
 	if len(st.LocalNets) > 64 {
 		return nil, errors.New("too many networks; 64 is the limit")

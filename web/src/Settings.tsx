@@ -166,6 +166,27 @@ export function SettingsPage(p: { info: SettingsInfo; canChangePassword: boolean
         <p className="help">You can still switch on the dashboard at any time; this sets the starting point.</p>
       </section>
 
+      <section className="card">
+        <h2>How long history is kept</h2>
+        <label className="field">
+          <span className="field-label">Days of history</span>
+          <input
+            className="input days"
+            type="number"
+            min={1}
+            max={90}
+            step={1}
+            required
+            value={Number.isFinite(draft.retentionDays) ? draft.retentionDays : ''}
+            onChange={(e) => change({ retentionDays: e.target.valueAsNumber })}
+          />
+          <span className="help">
+            Between 1 and 90. Older traffic is deleted from the host. Keeping more uses more disk space, and choosing
+            fewer days deletes the older history as soon as you save.
+          </span>
+        </label>
+      </section>
+
       <div className="actions">
         <button className="button primary" disabled={state === 'saving'}>
           {state === 'saving' ? 'Saving…' : 'Save settings'}

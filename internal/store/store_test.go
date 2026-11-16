@@ -138,7 +138,11 @@ func TestSettings(t *testing.T) {
 		t.Fatalf("defaults = %+v, %v", got, err)
 	}
 
-	in := Settings{LocalNets: []string{" 10.20.30.7/24 ", "10.20.30.0/24", "", "192.0.2.5", "2001:db8::/32"}, Show: ScopeInternet}
+	if got.RetentionDays != DefaultRetentionDays {
+		t.Errorf("default retention = %d", got.RetentionDays)
+	}
+
+	in := Settings{LocalNets: []string{" 10.20.30.7/24 ", "10.20.30.0/24", "", "192.0.2.5", "2001:db8::/32"}, Show: ScopeInternet, RetentionDays: 30}
 	nets, err := in.Validate()
 	if err != nil {
 		t.Fatal(err)
@@ -156,14 +160,24 @@ func TestSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ = st.LoadSettings()
-	if got.Show != ScopeInternet || got.PrivateIsLocal || len(got.LocalNets) != 3 {
+	if got.Show != ScopeInternet || got.PrivateIsLocal || len(got.LocalNets) != 3 || got.RetentionDays != 30 {
 		t.Errorf("reloaded = %+v", got)
 	}
 
+	// Settings saved before retention existed keep working, with the default.
+	if _, err := st.db.Exec(`UPDATE settings SET value = '{"localNets":[],"privateIsLocal":true,"show":"local"}' WHERE key = 'settings'`); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = st.LoadSettings(); got.Show != ScopeLocal || got.RetentionDays != DefaultRetentionDays {
+		t.Errorf("older saved settings = %+v", got)
+	}
+
 	for _, bad := range []Settings{
-		{Show: "sideways"},
-		{Show: ScopeAll, LocalNets: []string{"my network"}},
-		{Show: ScopeAll, LocalNets: []string{"0.0.0.0/0"}},
+		{Show: "sideways", RetentionDays: 7},
+		{Show: ScopeAll, RetentionDays: 7, LocalNets: []string{"my network"}},
+		{Show: ScopeAll, RetentionDays: 7, LocalNets: []string{"0.0.0.0/0"}},
+		{Show: ScopeAll, RetentionDays: 0},
+		{Show: ScopeAll, RetentionDays: 91},
 	} {
 		if _, err := bad.Validate(); err == nil {
 			t.Errorf("accepted %+v", bad)

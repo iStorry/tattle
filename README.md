@@ -83,10 +83,17 @@ of Tattle.
 
 ## Settings
 
-The Settings link in the dashboard controls what counts as your network
-(the host's own networks are detected; you can add more) and whether the
-dashboard hides traffic inside your network or internet traffic when it
-opens. Settings are saved on the host and apply to everyone.
+The Settings link in the dashboard controls:
+
+- what counts as your network (the host's own networks are detected, and
+  you can add more),
+- whether the dashboard hides traffic inside your network or internet
+  traffic when it opens,
+- how many days of history are kept (7 by default, up to 90),
+- the password.
+
+Settings are saved on the host and apply to everyone. The options below are
+only what is needed to start Tattle; everything else is in Settings.
 
 ## Options
 
@@ -97,8 +104,6 @@ opens. Settings are saved on the host and apply to everyone.
 | `--http` | off | Serve plain HTTP, for use behind an HTTPS reverse proxy |
 | `--iface` | every `vmbr*` bridge | Bridges to watch, comma separated |
 | `--db` | `/var/lib/tattle/tattle.db` | Where history is kept |
-| `--retention` | `7` | Days of history to keep |
-| `--local-net` | none | Extra networks to count as inside your network, comma separated |
 | `--pve-dir` | `/etc/pve` | Proxmox config directory |
 | `--demo` | off | Show invented traffic, with no sign-in, over plain HTTP |
 | `--demo-login` | off | With `--demo`, also require signing in |

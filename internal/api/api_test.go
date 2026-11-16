@@ -8,6 +8,7 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/istorry/tattle/internal/model"
 	"github.com/istorry/tattle/internal/store"
 )
 
@@ -241,5 +242,37 @@ func TestPasswordHashing(t *testing.T) {
 		if checkPassword(bad, "correct horse") {
 			t.Errorf("accepted malformed hash %q", bad)
 		}
+	}
+}
+
+func TestRetentionIsASetting(t *testing.T) {
+	c, _, st := setUp(t, "correct horse")
+	now := time.Now()
+	flow := func(age time.Duration, ip string) model.FlowDelta {
+		at := now.Add(-age)
+		return model.FlowDelta{Bucket: at.Unix() / 60 * 60, ClientID: "vm-100", ClientIP: "10.0.0.2", ServerIP: ip,
+			ServerPort: 443, Proto: "tcp", BytesUp: 1, BytesDown: 1, Packets: 2, Conns: 1, FirstSeen: at.UnixMilli(), LastSeen: at.UnixMilli()}
+	}
+	if err := st.Apply([]model.FlowDelta{flow(time.Hour, "198.51.100.1"), flow(5*24*time.Hour, "198.51.100.2")}); err != nil {
+		t.Fatal(err)
+	}
+	peers := func() string { return c.want("GET", "/api/peers?range=2592000", "", 200) }
+
+	if body := c.want("GET", "/api/status", "", 200); !strings.Contains(body, `"retentionDays":7`) {
+		t.Errorf("status = %s", body)
+	}
+	if body := peers(); !strings.Contains(body, "198.51.100.2") {
+		t.Fatalf("five-day-old traffic missing before the change: %s", body)
+	}
+
+	c.want("PUT", "/api/settings", `{"show":"all","localNets":[],"privateIsLocal":true,"retentionDays":0}`, 400)
+	c.want("PUT", "/api/settings", `{"show":"all","localNets":[],"privateIsLocal":true,"retentionDays":3}`, 200)
+
+	// Keeping fewer days removes the older history straight away.
+	if body := peers(); strings.Contains(body, "198.51.100.2") || !strings.Contains(body, "198.51.100.1") {
+		t.Errorf("after shortening to 3 days: %s", body)
+	}
+	if body := c.want("GET", "/api/status", "", 200); !strings.Contains(body, `"retentionDays":3`) {
+		t.Errorf("status = %s", body)
 	}
 }

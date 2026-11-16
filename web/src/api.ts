@@ -16,6 +16,7 @@ export type Settings = {
   localNets: string[]
   privateIsLocal: boolean
   show: Scope
+  retentionDays: number
 }
 
 export type SettingsInfo = { settings: Settings; detected: string[] }
