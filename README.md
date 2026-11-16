@@ -36,16 +36,26 @@ The screenshots show the built-in demo, which uses invented traffic.
 
 ## Install
 
-On the Proxmox host, download the package from the
-[releases page](https://github.com/istorry/tattle/releases) (`amd64` for
-almost every Proxmox machine) and install it:
+On the Proxmox host, as root:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/istorry/tattle/main/install.sh)"
+```
+
+That downloads the latest package for the machine, checks it against the
+published checksums, installs it with `apt`, and starts it as a service.
+[install.sh](install.sh) is short and worth reading before you run it; it
+changes nothing else on the host.
+
+If you would rather not pipe a script into a shell, download the package
+from the [releases page](https://github.com/istorry/tattle/releases)
+(`amd64` for almost every Proxmox machine) and install it yourself:
 
 ```bash
 apt install ./tattle_0.1.0_amd64.deb
 ```
 
-That installs the program, starts it as a service, and prints what to do
-next. Then:
+Either way, the install prints what to do next. Then:
 
 1. Open `https://your-proxmox:8477`. Your browser warns about the
    certificate the first time, as it does for the Proxmox web panel,
@@ -60,13 +70,15 @@ next. Then:
 Traffic appears within seconds. "What's new" stays quiet for the first day,
 while Tattle learns what is normal for each machine.
 
-To check the download before installing, put `SHA256SUMS` from the releases
-page beside it and run `sha256sum -c SHA256SUMS --ignore-missing`.
+To check a package you downloaded yourself, put `SHA256SUMS` from the
+releases page beside it and run `sha256sum -c SHA256SUMS --ignore-missing`.
 
 ### Upgrading and removing
 
-- **Upgrade:** install a newer package the same way. History, settings and
-  the password are kept.
+- **Upgrade:** run the install command again, or install a newer package.
+  History, settings and the password are kept.
+- **A particular release,** including a pre-release: put
+  `TATTLE_VERSION=v0.1.0` in front of `bash` in the install command.
 - **Remove:** `apt remove tattle` stops and removes it but keeps the history,
   so reinstalling carries on where it left off.
 - **Remove everything:** `apt purge tattle` also deletes the history, the

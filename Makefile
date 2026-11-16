@@ -47,6 +47,11 @@ test: web
 lint: web
 	@test -z "$$(gofmt -l cmd internal)" || { echo "gofmt needed on:"; gofmt -l cmd internal; exit 1; }
 	cd web && pnpm exec oxlint --deny-warnings
+	@if command -v shellcheck >/dev/null; then \
+		shellcheck install.sh packaging/build-deb.sh packaging/test-deb.sh packaging/postinst packaging/prerm packaging/postrm; \
+	else \
+		echo "shellcheck is not installed; the shell scripts were not checked"; \
+	fi
 
 clean:
 	rm -rf bin dist internal/ui/dist

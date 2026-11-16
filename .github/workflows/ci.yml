@@ -48,3 +48,12 @@ jobs:
       # package, runs the service, upgrades, removes and purges it for real.
       - name: Install, upgrade and remove the package
         run: sudo packaging/test-deb.sh dist/tattle_0.0.0~ci_amd64.deb
+      # The installer script, given the package just built, so nothing is
+      # downloaded: it must install it, and refuse to run without root.
+      - name: Run the installer script
+        run: |
+          if bash install.sh; then echo "the installer ran without root" >&2; exit 1; fi
+          sudo ip link show vmbr0 >/dev/null 2>&1 || { sudo ip link add vmbr0 type bridge && sudo ip link set vmbr0 up; }
+          sudo TATTLE_DEB="dist/tattle_0.0.0~ci_amd64.deb" bash install.sh
+          systemctl is-active tattle
+          sudo apt-get purge --yes tattle
