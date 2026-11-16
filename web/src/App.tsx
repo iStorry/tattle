@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   api,
+  type Fresh,
   type Machine,
   type Peer,
   type Scope,
@@ -13,6 +14,7 @@ import {
 import { Spark, TrafficChart } from './Chart'
 import { ago, bytes, count, KIND_LABEL, plural, service, YOURS_LABEL } from './format'
 import { PeerPage } from './Detail'
+import { WhatsNew } from './News'
 import { Amounts, Empty, Logo, ScopeTag, Tile } from './parts'
 import { SettingsPage } from './Settings'
 import { formatHash, RANGES, useView, type Sort, type Tab, type View } from './url'
@@ -22,6 +24,7 @@ type Data = {
   timeline: Timeline
   peers: Peer[]
   split: Split
+  fresh: Fresh
 }
 
 /** Remembers a search box's value only once the typing has paused. */
@@ -64,6 +67,10 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
     if (view.q !== search.trim()) setSearch(view.q)
   }
 
+  // "What's new" shows a handful until asked for more.
+  const [moreNew, setMoreNew] = useState(false)
+  const newLimit = moreNew ? 100 : 5
+
   const [status, setStatus] = useState<Status | null>(null)
   const [data, setData] = useState<Data | null>(null)
   const [failed, setFailed] = useState(false)
@@ -90,17 +97,18 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
     const load = async () => {
       if (document.hidden) return
       try {
-        const [st, machines, timeline, peers, split] = await Promise.all([
+        const [st, machines, timeline, peers, split, fresh] = await Promise.all([
           api.status(),
           api.machines(range, scope),
           api.timeline(range, machine, scope),
           api.peers(range, machine, scope),
           api.split(range, machine),
+          api.fresh(range, machine, scope, newLimit),
         ])
         if (!current) return
         setStatus(st)
         setNow(st.now)
-        setData({ machines, timeline, peers, split })
+        setData({ machines, timeline, peers, split, fresh })
         setFailed(false)
       } catch {
         if (current) setFailed(true)
@@ -114,7 +122,7 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
       clearInterval(id)
       document.removeEventListener('visibilitychange', load)
     }
-  }, [range, machine, scope, info])
+  }, [range, machine, scope, info, newLimit])
 
   const names = useMemo(() => new Map(data?.machines.map((m) => [m.id, m]) ?? []), [data])
   const selected = machine ? names.get(machine) : undefined
@@ -249,6 +257,16 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
                 : `Everything your VMs, containers and the host did on the network in the last ${rangeLabel}.`}
             </p>
           </div>
+
+          <WhatsNew
+            fresh={data.fresh}
+            names={names}
+            now={now}
+            view={view}
+            rangePhrase={rangeLabel}
+            expanded={moreNew}
+            onExpand={setMoreNew}
+          />
 
           <section className="card">
             <h2>Where the traffic went</h2>
@@ -422,6 +440,11 @@ function PeerList(p: { peers: Peer[]; names: Map<string, Machine>; now: number; 
             <div className="row-main">
               <span className="row-title">
                 <a href={formatHash({ ...p.view, peer: peer.name, dir: peer.direction })}>{other ? other.name : peer.name}</a>
+                {peer.new && (
+                  <span className="tag new" title="First seen in this time range">
+                    New
+                  </span>
+                )}
                 {other && <span className="tag">{YOURS_LABEL[other.kind]}</span>}
                 <ScopeTag local={local} incoming={peer.direction === 'in'} />
                 {services.some((s) => s.plain) && <span className="tag warn">Not encrypted</span>}

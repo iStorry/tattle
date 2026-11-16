@@ -70,9 +70,13 @@ func Open(path string) (*Store, error) {
 	// One connection keeps writes serialised and makes the in-memory
 	// database (which is per-connection) behave like a file.
 	db.SetMaxOpenConns(1)
-	if _, err := db.Exec(schema); err != nil {
+	if _, err := db.Exec(schema + freshSchema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("opening database %s: %w", path, err)
+	}
+	if err := backfillSightings(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("preparing database %s: %w", path, err)
 	}
 	return &Store{db: db}, nil
 }
@@ -112,12 +116,19 @@ func (s *Store) Apply(deltas []model.FlowDelta) error {
 			return err
 		}
 	}
+	if err := recordSightings(tx, deltas); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
-// Prune deletes history older than the cutoff.
+// Prune deletes history older than the cutoff, and forgets places that
+// have not been seen for much longer than that.
 func (s *Store) Prune(before time.Time) error {
-	_, err := s.db.Exec(`DELETE FROM flows WHERE bucket < ?`, before.Unix())
+	if _, err := s.db.Exec(`DELETE FROM flows WHERE bucket < ?`, before.Unix()); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(`DELETE FROM seen WHERE last_seen < ?`, time.Now().Add(-sightingLife).UnixMilli())
 	return err
 }
 
@@ -324,6 +335,7 @@ type Peer struct {
 	Direction string   `json:"direction"` // "out" or "in"
 	PeerID    string   `json:"peerId"`    // set when the other end is also a tracked machine
 	Local     bool     `json:"local"`     // the other end is inside the home network
+	New       bool     `json:"new"`       // a machine dealt with it for the first time in the range
 	IP        string   `json:"ip"`        // one of its addresses
 	IPCount   int64    `json:"ipCount"`
 	Machines  []string `json:"machines"`
@@ -374,5 +386,9 @@ func (s *Store) Peers(ctx context.Context, since time.Time, machine, scope strin
 		p.Services = strings.Split(services, ",")
 		out = append(out, p)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close() // before the next query: there is one connection
+	return out, s.markNew(ctx, out, since, machine)
 }

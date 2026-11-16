@@ -20,6 +20,9 @@ type dest struct {
 	proto    string
 	up, down int64   // typical bytes per connection
 	weight   float64 // chance of happening in any given minute
+	// fresh, when set, means this only started that long before the demo
+	// was opened, so there is something for "What's new" to show.
+	fresh time.Duration
 }
 
 type machine struct {
@@ -82,6 +85,7 @@ func lab() []machine {
 				{domain: "hooks.slack.com", ip: "198.51.100.71", port: 443, proto: "tcp", up: 2_100, down: 900, weight: 0.05},
 				{domain: "", ip: nas, serverID: "vm-103", port: 2049, proto: "tcp", up: 250_000, down: 1_800_000, weight: 0.5},
 				{domain: "telemetry.example-app.io", ip: "203.0.113.200", port: 80, proto: "tcp", up: 3_400, down: 500, weight: 0.12},
+				{domain: "updates.new-plugin.example", ip: "203.0.113.210", port: 443, proto: "tcp", up: 2_800, down: 190_000, weight: 0.5, fresh: 25 * time.Minute},
 			},
 			inbound: []dest{{ip: laptop, port: 22, proto: "tcp", up: 30_000, down: 70_000, weight: 0.04}},
 		},
@@ -94,6 +98,7 @@ func lab() []machine {
 				{domain: "dl.delivery.mp.microsoft.com", ip: "198.51.100.92", port: 443, proto: "tcp", up: 12_000, down: 52_000_000, weight: 0.008},
 				{domain: "edge.microsoft.com", ip: "198.51.100.93", port: 443, proto: "udp", up: 5_000, down: 60_000, weight: 0.1},
 				{domain: "time.windows.com", ip: "203.0.113.124", port: 123, proto: "udp", up: 90, down: 90, weight: 0.03},
+				{domain: "", ip: "203.0.113.66", port: 6881, proto: "udp", up: 48_000, down: 310_000, weight: 0.6, fresh: 3 * time.Hour},
 			},
 			inbound: []dest{{ip: laptop, port: 3389, proto: "tcp", up: 400_000, down: 6_000_000, weight: 0.03}},
 		},
@@ -134,6 +139,7 @@ func lab() []machine {
 				{ip: "203.0.113.77", port: 443, proto: "tcp", up: 30_000, down: 6_800_000, weight: 0.1},
 				{ip: "198.51.100.222", port: 443, proto: "tcp", up: 1_200, down: 2_800, weight: 0.03},
 				{ip: "203.0.113.9", port: 22, proto: "tcp", up: 900, down: 700, weight: 0.02},
+				{ip: "198.51.100.77", port: 443, proto: "tcp", up: 2_000, down: 5_000, weight: 0.4, fresh: 8 * time.Minute},
 			},
 		},
 		{
@@ -158,7 +164,7 @@ func around(n int64) int64 {
 // minute produces the traffic for one minute. scale is the fraction of the
 // minute being generated, so the live loop can emit a little every few
 // seconds and still average out to the same rates as the backfill.
-func minute(lab []machine, at time.Time, scale float64) []model.FlowDelta {
+func minute(lab []machine, at, opened time.Time, scale float64) []model.FlowDelta {
 	bucket := at.Unix() / 60 * 60
 	// Homes are quieter at night.
 	hour := float64(at.Hour()) + float64(at.Minute())/60
@@ -167,6 +173,9 @@ func minute(lab []machine, at time.Time, scale float64) []model.FlowDelta {
 	}
 	var out []model.FlowDelta
 	emit := func(clientID, clientIP, serverID, serverIP string, d dest) {
+		if d.fresh > 0 && at.Before(opened.Add(-d.fresh)) {
+			return
+		}
 		if rand.Float64() > d.weight*scale {
 			return
 		}
@@ -191,7 +200,7 @@ func minute(lab []machine, at time.Time, scale float64) []model.FlowDelta {
 	return out
 }
 
-// Run fills in a day of history and then keeps producing live traffic until
+// Run fills in a bit over a day of history and then keeps producing live traffic until
 // ctx is cancelled.
 func Run(ctx context.Context, st *store.Store) error {
 	l := lab()
@@ -205,8 +214,10 @@ func Run(ctx context.Context, st *store.Store) error {
 
 	now := time.Now()
 	var history []model.FlowDelta
-	for t := now.Add(-24 * time.Hour); t.Before(now); t = t.Add(time.Minute) {
-		history = append(history, minute(l, t, 1)...)
+	// More than a day, so every machine is past its learning period and
+	// "What's new" has something to say.
+	for t := now.Add(-30 * time.Hour); t.Before(now); t = t.Add(time.Minute) {
+		history = append(history, minute(l, t, now, 1)...)
 	}
 	if err := st.Apply(history); err != nil {
 		return fmt.Errorf("demo: %w", err)
@@ -221,7 +232,7 @@ func Run(ctx context.Context, st *store.Store) error {
 			return nil
 		case t := <-tick.C:
 			// Lean towards busier than the backfill so the page visibly moves.
-			if err := st.Apply(minute(l, t, 4*every.Seconds()/60)); err != nil {
+			if err := st.Apply(minute(l, t, now, 4*every.Seconds()/60)); err != nil {
 				return fmt.Errorf("demo: %w", err)
 			}
 		}

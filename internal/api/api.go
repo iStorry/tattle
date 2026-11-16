@@ -64,6 +64,7 @@ func New(st *store.Store, status *Status, ui fs.FS, requireLogin bool) *Server {
 	s.mux.HandleFunc("GET /api/timeline", s.handleTimeline)
 	s.mux.HandleFunc("GET /api/peers", s.handlePeers)
 	s.mux.HandleFunc("GET /api/peer", s.handlePeer)
+	s.mux.HandleFunc("GET /api/new", s.handleNew)
 	s.mux.Handle("GET /", http.FileServerFS(ui))
 	return s
 }
@@ -176,6 +177,12 @@ func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handlePeers(w http.ResponseWriter, r *http.Request) {
 	v, err := s.store.Peers(r.Context(), since(r, time.Now()), r.URL.Query().Get("machine"), scope(r), limit(r, 500, 2000))
+	writeJSON(w, v, err)
+}
+
+func (s *Server) handleNew(w http.ResponseWriter, r *http.Request) {
+	now := time.Now()
+	v, err := s.store.Fresh(r.Context(), since(r, now), now, r.URL.Query().Get("machine"), scope(r), limit(r, 5, 200))
 	writeJSON(w, v, err)
 }
 

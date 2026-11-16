@@ -51,6 +51,7 @@ export type Peer = {
   direction: 'out' | 'in'
   peerId: string
   local: boolean
+  new: boolean
   ip: string
   ipCount: number
   machines: string[]
@@ -60,6 +61,24 @@ export type Peer = {
   conns: number
   firstSeen: number
   lastSeen: number
+}
+
+export type First = {
+  machine: string
+  direction: 'out' | 'in'
+  name: string
+  firstSeen: number
+  ip: string
+  peerId: string
+  port: number
+  proto: string
+  local: boolean
+}
+
+export type Fresh = {
+  firsts: First[]
+  more: number
+  learning: { machine: string; until: number }[]
 }
 
 export type PeerDetail = {
@@ -141,6 +160,8 @@ export const api = {
   peer: (range: number, direction: 'out' | 'in', name: string, machine: string) =>
     get<PeerDetail>('/api/peer', { range, direction, name, machine }),
   split: (range: number, machine: string) => get<Split>('/api/split', { range, machine }),
+  fresh: (range: number, machine: string, scope: Scope, limit: number) =>
+    get<Fresh>('/api/new', { range, machine, scope, limit }),
   settings: () => get<SettingsInfo>('/api/settings'),
   saveSettings: async (settings: Settings): Promise<SettingsInfo> =>
     (await send('PUT', '/api/settings', settings)).json() as Promise<SettingsInfo>,

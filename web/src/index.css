@@ -772,6 +772,36 @@ path.sent {
   color: var(--internet-text);
 }
 
+/* What's new */
+
+.news .said {
+  font-weight: 400;
+  color: var(--text-2);
+}
+
+.news .rows li:first-child {
+  border-top: 0;
+  padding-top: 2px;
+}
+
+.news .quiet,
+.learning {
+  font-size: 13.5px;
+  color: var(--text-2);
+}
+
+.learning {
+  margin-top: 12px;
+  background: var(--hover);
+  border-radius: 8px;
+  padding: 7px 11px;
+}
+
+.tag.new {
+  background: var(--text);
+  color: var(--surface);
+}
+
 /* Detail page */
 
 .heading h1 .tag {

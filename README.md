@@ -120,6 +120,11 @@ many bytes moved in each direction. Totals are stored per minute in SQLite.
   server name in the HTTPS or HTTP/3 handshake, the `Host` header of plain
   HTTP, and DNS answers seen on the bridge.
 
+- **What's new** lists the first time a machine contacts a place, or a
+  caller reaches a machine. Each machine is watched for a day before
+  anything it does is called new, and places are remembered for over a year,
+  so a monthly job is not announced every month.
+
 ## What it cannot see
 
 - **The contents of encrypted connections.** For HTTPS, Tattle knows the site

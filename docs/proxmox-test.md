@@ -139,22 +139,30 @@ ip -br addr
 - [ ] **5b.** Devices on your LAN are tagged "Inside your network", and
       public sites "Internet".
 
-## 6. Load and restarts
+## 6. What's new
+
+- [ ] **6a.** On the first day, the "New in the last…" card says it is
+      still learning what is normal for your machines, and lists nothing.
+- [ ] **6b.** A day or more after installing, run the first `curl` from
+      check 3a against a site that guest has never contacted. It appears in
+      the card within a few seconds, and has a "New" tag in the list.
+
+## 7. Load and restarts
 
 Run a large transfer through a guest (a big download or `iperf3`) for a
 minute, with `top` open on the host.
 
-- [ ] **6a.** Note Tattle's CPU percentage during the transfer.
-- [ ] **6b.** The dashboard footer does not report missed packets. If it
+- [ ] **7a.** Note Tattle's CPU percentage during the transfer.
+- [ ] **7b.** The dashboard footer does not report missed packets. If it
       does, note the number.
 
 ```bash
 systemctl restart tattle
 ```
 
-- [ ] **6c.** After the restart, earlier history is still there.
+- [ ] **7c.** After the restart, earlier history is still there.
 
-## 7. Expected gaps
+## 8. Expected gaps
 
 These are known and already on the roadmap. Note them only if they are worse
 than described.
