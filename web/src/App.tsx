@@ -14,33 +14,13 @@ import {
 import { Spark, TrafficChart } from './Chart'
 import { ago, bytes, count, KIND_LABEL, plural, service } from './format'
 import { SettingsPage } from './Settings'
-
-const RANGES = [
-  { label: '15 min', phrase: '15 minutes', seconds: 15 * 60 },
-  { label: '1 hour', phrase: 'hour', seconds: 60 * 60 },
-  { label: '24 hours', phrase: '24 hours', seconds: 24 * 60 * 60 },
-  { label: '7 days', phrase: '7 days', seconds: 7 * 24 * 60 * 60 },
-]
-
-type Tab = 'out' | 'in' | 'log'
-type Sort = 'recent' | 'data'
+import { formatHash, RANGES, useView, type Sort, type Tab } from './url'
 
 const SCOPES: { value: Scope; label: string }[] = [
   { value: 'all', label: 'Show everything' },
   { value: 'internet', label: 'Hide inside your network' },
   { value: 'local', label: 'Hide internet' },
 ]
-
-/** The page named by the address bar: "#/settings" or the dashboard. */
-function useRoute(): string {
-  const [hash, setHash] = useState(window.location.hash)
-  useEffect(() => {
-    const on = () => setHash(window.location.hash)
-    window.addEventListener('hashchange', on)
-    return () => window.removeEventListener('hashchange', on)
-  }, [])
-  return hash === '#/settings' ? 'settings' : 'dashboard'
-}
 
 function ScopeTag({ local, incoming }: { local: boolean; incoming?: boolean }) {
   if (local) return <span className="tag local">Inside your network</span>
@@ -66,16 +46,35 @@ function useDebounced<T>(value: T, ms: number): T {
 }
 
 export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; onSignOut: () => void }) {
-  const [range, setRange] = useState(RANGES[1].seconds)
-  const [machine, setMachine] = useState('')
-  const [tab, setTab] = useState<Tab>('out')
-  const [sort, setSort] = useState<Sort>('recent')
-  // Unknown until the saved settings say what the dashboard should open with.
-  const [scope, setScope] = useState<Scope | null>(null)
+  // What is being looked at comes from the address bar, so it can be
+  // bookmarked, shared and stepped through with the back button.
+  const [view, go] = useView()
+  const { range, machine, tab, sort } = view
+  const route = view.page
+  const setRange = (range: number) => go({ range })
+  const setMachine = (machine: string) => go({ machine })
+  const setTab = (tab: Tab) => go({ tab })
+  const setSort = (sort: Sort) => go({ sort }, true)
+  const setScope = (scope: Scope) => go({ scope })
+
   const [info, setInfo] = useState<SettingsInfo | null>(null)
-  const route = useRoute()
-  const [search, setSearch] = useState('')
+  // Unless the address says otherwise, the saved settings decide what the
+  // dashboard opens with, and they are not known until they have loaded.
+  const scope: Scope | null = info ? (view.scope ?? info.settings.show) : null
+
+  // The search box keeps its own text while typing, and the address
+  // follows once the typing pauses.
+  const [search, setSearch] = useState(view.q)
   const query = useDebounced(search.trim(), 250)
+  useEffect(() => {
+    go({ q: query }, true)
+  }, [query, go])
+  const [seenQ, setSeenQ] = useState(view.q)
+  if (view.q !== seenQ) {
+    // The address changed underneath, for example with the back button.
+    setSeenQ(view.q)
+    if (view.q !== search.trim()) setSearch(view.q)
+  }
 
   const [status, setStatus] = useState<Status | null>(null)
   const [data, setData] = useState<Data | null>(null)
@@ -90,7 +89,6 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
       .then((i) => {
         if (!current) return
         setInfo(i)
-        setScope(i.settings.show)
       })
       .catch(() => current && setFailed(true))
     return () => {
@@ -133,6 +131,18 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
 
   const names = useMemo(() => new Map(data?.machines.map((m) => [m.id, m]) ?? []), [data])
   const selected = machine ? names.get(machine) : undefined
+
+  // An address naming a machine that does not exist shows everything.
+  const unknownMachine = data !== null && machine !== '' && !selected
+  useEffect(() => {
+    if (unknownMachine) go({ machine: '' }, true)
+  }, [unknownMachine, go])
+
+  // The tab title says what is open, which helps with bookmarks and history.
+  const pageTitle = route === 'settings' ? 'Settings' : (selected?.name ?? '')
+  useEffect(() => {
+    document.title = pageTitle ? `${pageTitle} · Tattle` : 'Tattle'
+  }, [pageTitle])
 
   if (!data || !status || !info || scope === null) {
     return (
@@ -180,7 +190,7 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
             ))}
           </div>
         )}
-        <a className="nav-link" href={route === 'settings' ? '#/' : '#/settings'}>
+        <a className="nav-link" href={formatHash({ ...view, page: route === 'settings' ? 'dashboard' : 'settings' })}>
           {route === 'settings' ? 'Dashboard' : 'Settings'}
         </a>
         {canSignOut && (
@@ -201,9 +211,11 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
         <SettingsPage
           info={info}
           canChangePassword={canSignOut}
+          backHref={formatHash({ ...view, page: 'dashboard' })}
           onSaved={(saved) => {
             setInfo(saved)
-            setScope(saved.settings.show)
+            // Follow the newly saved choice, not one left in the address.
+            go({ scope: null }, true)
           }}
         />
       ) : (
@@ -269,7 +281,7 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
 
           <section className="card">
             <h2>Where the traffic went</h2>
-            <SplitBar split={data.split} info={info} />
+            <SplitBar split={data.split} info={info} settingsHref={formatHash({ ...view, page: 'settings' })} />
           </section>
 
           <section className="card">
@@ -365,7 +377,7 @@ function Amounts({ sent, received }: { sent: number; received: number }) {
   )
 }
 
-function SplitBar({ split, info }: { split: Split; info: SettingsInfo }) {
+function SplitBar({ split, info, settingsHref }: { split: Split; info: SettingsInfo; settingsHref: string }) {
   const { internet, local } = split
   const networks = [...info.detected, ...info.settings.localNets]
   const total = internet.bytes + local.bytes
@@ -401,7 +413,7 @@ function SplitBar({ split, info }: { split: Split; info: SettingsInfo }) {
         {[...networks, ...(info.settings.privateIsLocal ? ['any private address (such as 192.168.x.x or 10.x.x.x)'] : [])].join(
           ', ',
         ) || 'only your own VMs and containers'}
-        . <a href="#/settings">Change</a>
+        . <a href={settingsHref}>Change</a>
       </p>
     </div>
   )

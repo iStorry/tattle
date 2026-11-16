@@ -16,7 +16,12 @@ const SHOW: { value: Scope; title: string; hint: string }[] = [
   },
 ]
 
-export function SettingsPage(p: { info: SettingsInfo; canChangePassword: boolean; onSaved: (info: SettingsInfo) => void }) {
+export function SettingsPage(p: {
+  info: SettingsInfo
+  canChangePassword: boolean
+  backHref: string
+  onSaved: (info: SettingsInfo) => void
+}) {
   const [draft, setDraft] = useState<Settings>(p.info.settings)
   const [entry, setEntry] = useState('')
   const [state, setState] = useState<'idle' | 'saving' | 'saved'>('idle')
@@ -58,7 +63,7 @@ export function SettingsPage(p: { info: SettingsInfo; canChangePassword: boolean
   return (
     <div className="settings">
       <div className="heading">
-        <a href="#/">← Back to the dashboard</a>
+        <a href={p.backHref}>← Back to the dashboard</a>
         <h1>Settings</h1>
         <p>These apply to everyone who opens this dashboard.</p>
       </div>
