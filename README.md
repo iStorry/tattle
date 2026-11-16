@@ -1,79 +1,120 @@
 # Tattle
 
-Tattle shows, in plain language, what every VM and container on a Proxmox host
-is talking to: which websites and services they contact, who connects to them,
-and how much data moves.
+Tattle shows, in plain language, what every VM and container on a Proxmox
+host is talking to: which websites and services they contact, who connects
+to them, and how much data moves.
 
-It is one program that runs on the Proxmox host. Nothing is installed inside
-the guests.
+It is one program on the Proxmox host. Nothing is installed inside the
+guests, and nothing leaves the host.
 
-## Try it without Proxmox
+![The Tattle dashboard: what is new, how traffic divides between the internet and the home network, and the places each machine contacted](docs/images/dashboard.png)
 
-```bash
-make demo
-```
+## What you get
 
-Then open http://127.0.0.1:8477. Demo mode shows invented traffic from a
-pretend home lab. Building needs Go and pnpm.
+- **Every machine by name.** VMs, containers and the host itself, read from
+  Proxmox. No setup per guest.
+- **Places, not packets.** "docker-host contacted registry-1.docker.io" with
+  "Secure web (HTTPS)", not addresses and port numbers.
+- **What's new.** The first time a machine contacts somewhere, or something
+  connects to it, is listed at the top.
+- **Internet or home network.** Every connection is labelled, and either
+  side can be hidden.
+- **Details one click away.** Who uses a destination, when, how much, and on
+  which services.
+- **Names for your devices.** Laptops, phones and televisions appear by the
+  name they announce, or one you give them.
+- **Who owns an address.** "Cloudflare, Inc." for an address that has no
+  name, from a table kept on the host.
+- **A health page** that says whether Tattle is working and what to do if
+  not.
 
-## Install on a Proxmox host
+| A destination's detail page | The health page |
+|---|---|
+| ![Detail page for one destination: its address, first and last seen, totals, traffic over time and the machines that use it](docs/images/detail.png) | ![Health page: five checks, each with a status and a plain sentence](docs/images/health.png) |
 
-Download the `.deb` for your host from the
+The screenshots show the built-in demo, which uses invented traffic.
+
+## Install
+
+On the Proxmox host, download the package from the
 [releases page](https://github.com/istorry/tattle/releases) (`amd64` for
-almost every Proxmox machine), copy it to the host, and install it there:
+almost every Proxmox machine) and install it:
 
 ```bash
 apt install ./tattle_0.1.0_amd64.deb
 ```
 
 That installs the program, starts it as a service, and prints what to do
-next. To check the download first, put `SHA256SUMS` from the same page
-beside it and run `sha256sum -c SHA256SUMS --ignore-missing`.
+next. Then:
 
-- **Upgrade:** install a newer `.deb` the same way. History, settings and the
-  password are kept.
+1. Open `https://your-proxmox:8477`. Your browser warns about the
+   certificate the first time, as it does for the Proxmox web panel,
+   because Tattle generates its own. The connection is still encrypted.
+2. Choose a password. Tattle asks for a setup code, which shows that the
+   host is yours. It is in the service log:
+
+   ```bash
+   journalctl -u tattle | grep "setup code" | tail -1
+   ```
+
+Traffic appears within seconds. "What's new" stays quiet for the first day,
+while Tattle learns what is normal for each machine.
+
+To check the download before installing, put `SHA256SUMS` from the releases
+page beside it and run `sha256sum -c SHA256SUMS --ignore-missing`.
+
+### Upgrading and removing
+
+- **Upgrade:** install a newer package the same way. History, settings and
+  the password are kept.
 - **Remove:** `apt remove tattle` stops and removes it but keeps the history,
   so reinstalling carries on where it left off.
 - **Remove everything:** `apt purge tattle` also deletes the history, the
   password and the certificate.
 
-### Building the package yourself
+## Try it without Proxmox
 
-On Debian or Ubuntu, with Go and pnpm installed:
-
-```bash
-make deb
-```
-
-The packages are written to `dist/`. On another system, run
-`packaging/build-deb.sh` inside a Debian container after `make linux data`.
-
-### First visit
-
-Open `https://your-proxmox:8477`.
-
-Your browser will warn about the certificate on the first visit, as it does
-for the Proxmox web panel, because Tattle generates its own. The connection
-is still encrypted. To check you are accepting the right certificate,
-compare the fingerprint your browser shows with the one in the log:
+With Go and pnpm installed:
 
 ```bash
-journalctl -u tattle | grep fingerprint | tail -1
+make demo
 ```
 
-Tattle then asks you to choose a password and to enter a setup code, which
-shows that the host is yours. The code is in the service log:
+Then open http://127.0.0.1:8477. The demo shows invented traffic from a
+pretend home lab, with no sign-in.
 
-```bash
-journalctl -u tattle | grep "setup code" | tail -1
-```
+## What Tattle collects
 
-After that, nothing but the sign-in page can be seen without the password.
-Wrong guesses are limited. If you forget the password, run this on the host
-and set a new one in the dashboard:
+Tattle records **who talked to whom, when, and how much**. For each
+connection that is the machine, the other end's address and name, the
+service (port), and the amount of data. It never records what was said: not
+pages, not requests, not passwords, not file contents.
+
+- **Everything stays on the host,** in one database under `/var/lib/tattle`.
+- **Tattle makes no connections of its own.** There is no telemetry, no
+  update check, and no lookups over the network. The dashboard loads nothing
+  from other sites.
+- **You decide how long it is kept,** and `apt purge tattle` deletes it all.
+
+The full statement, including what a person with the dashboard password can
+learn about the people using your network, is in
+[docs/privacy.md](docs/privacy.md).
+
+## Signing in and HTTPS
+
+After setup, nothing but the sign-in page can be seen without the password,
+and wrong guesses are limited. If you forget the password, run this on the
+host and set a new one in the dashboard:
 
 ```bash
 tattle reset-password
+```
+
+To check you are accepting the right certificate on the first visit, compare
+the fingerprint your browser shows with the one in the log:
+
+```bash
+journalctl -u tattle | grep fingerprint | tail -1
 ```
 
 ### Avoiding the certificate warning
@@ -99,13 +140,8 @@ tattle --http --listen 127.0.0.1:8477
 With `--http`, passwords are only as protected as the connection in front
 of Tattle.
 
-## Is it working?
-
-The Health link in the dashboard checks, in plain words, that Tattle is
-capturing traffic, has found your VMs and containers, has room to keep
-history, and is serving the dashboard securely. When something needs
-attention the link says so from every page, and the Health page says what to
-do about it.
+To make options like these permanent, run `systemctl edit tattle` and
+override `ExecStart`.
 
 ## Settings
 
@@ -122,8 +158,6 @@ The Settings link in the dashboard controls:
 Settings are saved on the host and apply to everyone. The options below are
 only what is needed to start Tattle; everything else is in Settings.
 
-## Options
-
 | Flag | Default | Meaning |
 |---|---|---|
 | `--listen` | `:8477` | Address for the dashboard |
@@ -138,40 +172,38 @@ only what is needed to start Tattle; everything else is in Settings.
 
 ## How it works
 
-All guest traffic crosses a bridge on the host (`vmbr0`). Tattle listens on the
-bridge and, for each connection, records who started it, where it went, and how
-many bytes moved in each direction. Totals are stored per minute in SQLite,
-and folded into one total per hour once they are a week old, which takes a
-small fraction of the space.
+All guest traffic crosses a bridge on the host (`vmbr0`). Tattle listens on
+the bridge and, for each connection, records who started it, where it went,
+and how many bytes moved in each direction. Totals are stored per minute in
+SQLite, and folded into one total per hour once they are a week old, which
+takes a small fraction of the space.
 
-- **Machine names** come from the VM and container config files in `/etc/pve`,
-  matched to traffic by network card (MAC) address.
+- **Machine names** come from the VM and container config files in
+  `/etc/pve`, matched to traffic by network card (MAC) address.
 - **Destination names** come from three places, in order of preference: the
   server name in the HTTPS or HTTP/3 handshake, the `Host` header of plain
   HTTP, and DNS answers seen on the bridge.
-
-- **Device names** for things that are not VMs or containers, such as a
-  laptop or a television, come from what the device announces about itself
-  (mDNS and DHCP), or from a name you give it on its detail page. Your name
-  always wins.
-- **Address owners.** For an internet address, Tattle says which
-  organisation's network it belongs to ("Cloudflare, Inc."), from a table
-  kept on the host. Nothing is looked up over the network, and addresses
-  inside your network are never looked up at all. The table is the
-  public-domain list from [iptoasn.com](https://iptoasn.com), fetched when
-  Tattle is built; it uses about 25 MB of memory.
-- **What's new** lists the first time a machine contacts a place, or a
-  caller reaches a machine. Each machine is watched for a day before
-  anything it does is called new, and places are remembered for over a year,
-  so a monthly job is not announced every month.
+- **Device names** for things that are not VMs or containers come from what
+  the device announces about itself (mDNS and DHCP), or from a name you
+  give it on its detail page. Your name always wins.
+- **Address owners** come from the public-domain list published by
+  [iptoasn.com](https://iptoasn.com), which is bundled with each release
+  and uses about 25 MB of memory. Addresses inside your network are never
+  looked up.
+- **What's new** is the first time a machine deals with a place. Each
+  machine is watched for a day before anything it does is called new, and
+  places are remembered for over a year, so a monthly job is not announced
+  every month.
+- **Traffic the host forwards** for a guest, whether routed, masqueraded or
+  port-forwarded, is counted once, for the guest.
 
 ## What it cannot see
 
-- **The contents of encrypted connections.** For HTTPS, Tattle knows the site
-  and the amount of data, not the pages or what was sent.
-- **Names for some connections.** A destination shows as a bare address when
-  the guest connects by address, or uses a protocol other than HTTPS, HTTP/3
-  or HTTP together with encrypted DNS.
+- **The contents of encrypted connections.** For HTTPS, Tattle knows the
+  site and the amount of data, not the pages or what was sent.
+- **Names for some connections.** A destination shows as a bare address
+  when the guest connects by address, or uses a protocol other than HTTPS,
+  HTTP/3 or HTTP together with encrypted DNS.
 - **Where a server is.** The country shown for a network is where the
   network is registered. A company registered in the United States may be
   answering you from a server anywhere.
@@ -181,41 +213,28 @@ small fraction of the space.
 
 ## Known limitations
 
+- **Not yet run on a real Proxmox host.** Everything has been tested on
+  Linux with bridges and guests wired the way Proxmox wires them, and the
+  package under systemd on Debian, but not on Proxmox itself.
+  [docs/proxmox-test.md](docs/proxmox-test.md) is the checklist for that
+  first run.
 - **Device names belong to an address, not to the device.** If your router
   hands a named device's address to a different device, the name moves with
   the address until the device announces itself again or you rename it.
   Giving devices fixed addresses in your router avoids this.
-
 - **Masqueraded connections can occasionally show for the host as well.**
-  When the host routes or masquerades guest traffic, Tattle counts it once,
-  for the guest. It recognises the host's translated copy by its source
-  port, so on the rare occasion the host has to pick a different port, that
-  connection also appears under the host.
+  Tattle recognises the host's translated copy of a guest's connection by
+  its source port, so on the rare occasion the host has to pick a different
+  port, that connection also appears under the host.
 - **A guest's ping through a masquerading host** is counted for both.
-- **Tested on a simulated bridge, not yet on a real Proxmox host.** Capture,
-  naming and attribution were verified in a Linux container with a bridge and
-  a veth guest wired the way Proxmox wires containers.
 
-## Development
+## Contributing and security
 
-```bash
-make test
-```
-
-For UI work, run `make demo` in one terminal and `pnpm dev` in `web/` in
-another; the dev server proxies `/api` to the running binary.
-
-```
-cmd/tattle         the program: flags and wiring
-internal/capture   raw packet capture (Linux)
-internal/decode    Ethernet/IP/TCP/UDP, DNS, TLS and HTTP parsing
-internal/guests    reads VM and container configs
-internal/tracker   turns packets into connections and attributes them
-internal/store     SQLite history and queries
-internal/api       JSON API and static file server
-internal/demo      invented traffic
-web                the dashboard (React + Vite)
-```
+- [CONTRIBUTING.md](CONTRIBUTING.md) covers building, testing and the layout
+  of the code.
+- [SECURITY.md](SECURITY.md) says how to report a vulnerability privately.
+- [CHANGELOG.md](CHANGELOG.md) lists what changed in each release, and
+  [ROADMAP.md](ROADMAP.md) what is planned.
 
 ## Licence
 

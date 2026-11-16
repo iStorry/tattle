@@ -6,6 +6,35 @@ finish and check on its own, and each lists what "done" means.
 Guiding rule: Tattle runs as root and sees every packet on the host, so
 trust, accuracy and a clean install come before new features.
 
+## Where it stands
+
+| Step | | Status |
+|---|---|---|
+| 1 | Repository and licence | Done |
+| 2 | First run on a real Proxmox host | **Not done.** Needs a host; [docs/proxmox-test.md](docs/proxmox-test.md) is the checklist |
+| 3 | Names from split HTTPS handshakes | Done; not yet seen with a real browser |
+| 4 | Names for HTTP/3 | Done; not yet seen with a real browser |
+| 5 | No double counting in routed setups | Done |
+| 6 | Capture that keeps up | **Not done.** Needs measuring on a real host |
+| 7 | Login | Done |
+| 8 | Encrypted access | Done |
+| 9 | Least privilege | **Not done.** The service runs as root with restrictions; a dedicated user needs testing on a real host |
+| 10 | One place for configuration | Done |
+| 11 | Shareable links | Done |
+| 12 | Detail views | Done |
+| 13 | Simpler local/internet control | Done |
+| 14 | What's new | Done |
+| 15 | Names for devices on the network | Done |
+| 16 | Who owns an address | Done, using iptoasn.com's public-domain table |
+| 17 | Longer history | Done |
+| 18 | Health page | Done |
+| 19 | Packaging | Done; tested on Debian, not on Proxmox |
+| 20 | Documentation | Done |
+| 21 | Release 0.1.0 | Waiting on steps 2, 6 and 9 |
+
+"Done" means built and tested on Linux in containers and in CI. Nothing has
+run on a real Proxmox host yet, which is what step 2 is for.
+
 ## Phase 0: Foundation
 
 ### 1. Repository and licence

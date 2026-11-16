@@ -25,6 +25,8 @@ systemctl is-active  --quiet tattle || fail "the service is not running"
 tattle --version
 [ -f /usr/share/tattle/ip2asn.tsv.gz ] || fail "the address-owner table is missing"
 [ "$(stat -c %a /var/lib/tattle/tls/key.pem)" = 600 ] || fail "the private key is readable by others"
+[ "$(stat -c %a /var/lib/tattle)" = 700 ] || fail "the folder holding the history is open to other users"
+[ "$(stat -c %a /var/lib/tattle/tattle.db)" = 600 ] || fail "the history is readable by other users"
 journalctl -u tattle --no-pager | grep -q "watching vmbr0" || fail "it is not watching vmbr0"
 if journalctl -u tattle --no-pager | grep -q "address-owner table"; then fail "the address-owner table was not found"; fi
 [ "$(api https://127.0.0.1:8477/api/auth)" = '{"enabled":true,"setup":true,"signedIn":false}' ] || fail "unexpected answer from the dashboard"

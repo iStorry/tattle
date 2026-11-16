@@ -6,6 +6,9 @@ Wants=network-online.target
 [Service]
 ExecStart=/usr/bin/tattle
 StateDirectory=tattle
+# The history, the password hash and the private key are for root only.
+StateDirectoryMode=0700
+UMask=0077
 Restart=on-failure
 RestartSec=5
 
