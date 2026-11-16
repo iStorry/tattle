@@ -62,6 +62,21 @@ export type Peer = {
   lastSeen: number
 }
 
+export type PeerDetail = {
+  name: string
+  direction: 'out' | 'in'
+  peerId: string
+  local: boolean
+  ips: string[]
+  firstSeen: number // earliest in the kept history, or 0
+  lastSeen: number // within the time range, or 0
+  sent: number
+  received: number
+  conns: number
+  timeline: Timeline
+  conversations: Conversation[]
+}
+
 export type Conversation = {
   clientId: string
   clientIp: string
@@ -123,8 +138,8 @@ export const api = {
   timeline: (range: number, machine: string, scope: Scope) =>
     get<Timeline>('/api/timeline', { range, machine, scope }),
   peers: (range: number, machine: string, scope: Scope) => get<Peer[]>('/api/peers', { range, machine, scope }),
-  activity: (range: number, machine: string, scope: Scope, q: string) =>
-    get<Conversation[]>('/api/activity', { range, machine, scope, q, limit: 300 }),
+  peer: (range: number, direction: 'out' | 'in', name: string, machine: string) =>
+    get<PeerDetail>('/api/peer', { range, direction, name, machine }),
   split: (range: number, machine: string) => get<Split>('/api/split', { range, machine }),
   settings: () => get<SettingsInfo>('/api/settings'),
   saveSettings: async (settings: Settings): Promise<SettingsInfo> =>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { api, onUnauthorized, type AuthState } from './api'
-import App, { Logo } from './App'
+import App from './App'
+import { Logo } from './parts'
 
 /** Decides between first-time setup, the sign-in page and the dashboard. */
 export function Root() {

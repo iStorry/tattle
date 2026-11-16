@@ -95,10 +95,6 @@ func TestScopeFiltersEveryView(t *testing.T) {
 		t.Errorf("local timeline = %d sent, %d received", s, r)
 	}
 
-	log, _ := st.Activity(ctx, since, "", ScopeLocal, "", 100)
-	if len(log) != 3 {
-		t.Errorf("local log has %d rows", len(log))
-	}
 	machines, _ := st.Machines(ctx, since, now, ScopeInternet)
 	if len(machines) != 2 || machines[0].Sent != 100 || machines[1].Sent != 40 || machines[0].Destinations != 1 {
 		t.Errorf("internet machines = %+v", machines)
@@ -182,5 +178,70 @@ func TestSettings(t *testing.T) {
 		if _, err := bad.Validate(); err == nil {
 			t.Errorf("accepted %+v", bad)
 		}
+	}
+}
+
+func TestPeerDetail(t *testing.T) {
+	st, now := seeded(t)
+	ctx, since := context.Background(), now.Add(-time.Hour)
+	SetLocal([]netip.Prefix{netip.MustParsePrefix("10.20.30.0/24")}, true)
+	// A second address and service for the same site, from another machine,
+	// and an older visit outside the time range.
+	b := now.Unix() / 60 * 60
+	old := now.Add(-3 * time.Hour)
+	err := st.Apply([]model.FlowDelta{
+		{Bucket: b, ClientID: "ct-200", ClientIP: "10.20.30.53", ServerIP: "198.51.100.31", ServerPort: 22, Proto: "tcp",
+			Domain: "api.github.com", BytesUp: 7, BytesDown: 9, Packets: 2, Conns: 2, FirstSeen: now.UnixMilli(), LastSeen: now.UnixMilli()},
+		{Bucket: old.Unix() / 60 * 60, ClientID: "vm-100", ClientIP: "10.20.30.20", ServerIP: "198.51.100.30", ServerPort: 443, Proto: "tcp",
+			Domain: "api.github.com", BytesUp: 50, BytesDown: 60, Packets: 2, Conns: 1, FirstSeen: old.UnixMilli(), LastSeen: old.UnixMilli()},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	d, err := st.Peer(ctx, since, now, "out", "api.github.com", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Sent != 107 || d.Received != 1009 || d.Conns != 3 || d.Local || d.PeerID != "" {
+		t.Errorf("totals = %+v", d)
+	}
+	if len(d.IPs) != 2 || len(d.Conversations) != 2 {
+		t.Errorf("ips = %v, %d conversations", d.IPs, len(d.Conversations))
+	}
+	if d.FirstSeen != old.UnixMilli() || d.LastSeen != now.UnixMilli() {
+		t.Errorf("first seen %d, last seen %d", d.FirstSeen, d.LastSeen)
+	}
+	var sent, received int64
+	for _, p := range d.Timeline.Points {
+		sent += p.Sent
+		received += p.Received
+	}
+	if sent != d.Sent || received != d.Received {
+		t.Errorf("timeline adds up to %d/%d, totals are %d/%d", sent, received, d.Sent, d.Received)
+	}
+
+	// Limited to one machine.
+	one, _ := st.Peer(ctx, since, now, "out", "api.github.com", "ct-200")
+	if one.Sent != 7 || len(one.Conversations) != 1 || one.Conversations[0].Port != 22 {
+		t.Errorf("one machine = %+v", one)
+	}
+
+	// Another machine as the destination, by its address.
+	guest, _ := st.Peer(ctx, since, now, "out", "10.20.30.53", "")
+	if guest.PeerID != "ct-200" || !guest.Local || guest.Sent != 5 || guest.Received != 7 {
+		t.Errorf("guest = %+v", guest)
+	}
+
+	// An incoming caller: amounts are from the machine's side.
+	in, _ := st.Peer(ctx, since, now, "in", "203.0.113.9", "")
+	if in.Sent != 40 || in.Received != 30 || in.Local || len(in.Conversations) != 1 || in.Conversations[0].ServerID != "ct-200" {
+		t.Errorf("incoming = %+v", in)
+	}
+
+	// Something never seen comes back empty, not as an error.
+	none, err := st.Peer(ctx, since, now, "out", "never.example", "")
+	if err != nil || none.FirstSeen != 0 || none.Conns != 0 || len(none.Conversations) != 0 || len(none.Timeline.Points) == 0 {
+		t.Errorf("unknown = %+v, %v", none, err)
 	}
 }

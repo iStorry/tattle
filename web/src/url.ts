@@ -4,12 +4,13 @@ import type { Scope } from './api'
 // What the dashboard is showing lives in the address bar, after the "#":
 //
 //   #/?machine=vm-100&range=24h&tab=in&show=internet&sort=data&q=docker
+//   #/?peer=api.github.com&range=24h
 //   #/settings
 //
 // so a view can be bookmarked or sent to someone, a reload keeps it, and
 // the browser's back button steps through what was looked at.
 
-export type Tab = 'out' | 'in' | 'log'
+export type Tab = 'out' | 'in'
 export type Sort = 'recent' | 'data'
 
 export const RANGES = [
@@ -29,6 +30,8 @@ export type View = {
   scope: Scope | null // null means "whatever the saved settings say"
   sort: Sort
   q: string
+  peer: string // the destination or caller whose detail page is open, or ''
+  dir: Tab // whether peer is somewhere machines contacted, or a caller
 }
 
 function oneOf<T extends string>(value: string | null, allowed: readonly T[], fallback: T): T {
@@ -44,10 +47,12 @@ export function parseHash(hash: string): View {
     page: path === '/settings' ? 'settings' : 'dashboard',
     machine: p.get('machine') ?? '',
     range: (RANGES.find((r) => r.key === p.get('range')) ?? DEFAULT_RANGE).seconds,
-    tab: oneOf(p.get('tab'), ['out', 'in', 'log'], 'out'),
+    tab: oneOf(p.get('tab'), ['out', 'in'], 'out'),
     scope: show === null ? null : oneOf<Scope>(show, ['all', 'internet', 'local'], 'all'),
     sort: oneOf(p.get('sort'), ['recent', 'data'], 'recent'),
     q: p.get('q') ?? '',
+    peer: p.get('peer') ?? '',
+    dir: oneOf(p.get('dir'), ['out', 'in'], 'out'),
   }
 }
 
@@ -60,6 +65,10 @@ export function formatHash(v: View): string {
   if (v.scope !== null) p.set('show', v.scope)
   if (v.sort !== 'recent') p.set('sort', v.sort)
   if (v.q) p.set('q', v.q)
+  if (v.peer) {
+    p.set('peer', v.peer)
+    if (v.dir !== 'out') p.set('dir', v.dir)
+  }
   const query = p.toString()
   return `#${v.page === 'settings' ? '/settings' : '/'}${query ? `?${query}` : ''}`
 }

@@ -82,7 +82,7 @@ func TestNothingButSignInIsReachableWithoutASession(t *testing.T) {
 	srv, _ := newServer(t, true)
 	c := &client{t: t, srv: srv}
 	for _, path := range []string{
-		"/api/status", "/api/machines", "/api/timeline", "/api/peers", "/api/activity",
+		"/api/status", "/api/machines", "/api/timeline", "/api/peers", "/api/peer?name=example.com",
 		"/api/split", "/api/settings", "/api/does-not-exist",
 	} {
 		c.want("GET", path, "", 401)

@@ -86,3 +86,6 @@ export function service(key: string): Service {
 }
 
 export const KIND_LABEL = { vm: 'VM', ct: 'Container', host: 'Host' } as const
+
+/** The tag on a destination that is one of the owner's own machines. */
+export const YOURS_LABEL = { vm: 'Your VM', ct: 'Your container', host: 'Your host' } as const

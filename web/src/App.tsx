@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   api,
-  type Conversation,
   type Machine,
   type Peer,
   type Scope,
@@ -12,9 +11,11 @@ import {
   type Timeline,
 } from './api'
 import { Spark, TrafficChart } from './Chart'
-import { ago, bytes, count, KIND_LABEL, plural, service } from './format'
+import { ago, bytes, count, KIND_LABEL, plural, service, YOURS_LABEL } from './format'
+import { PeerPage } from './Detail'
+import { Amounts, Empty, Logo, ScopeTag, Tile } from './parts'
 import { SettingsPage } from './Settings'
-import { formatHash, RANGES, useView, type Sort, type Tab } from './url'
+import { formatHash, RANGES, useView, type Sort, type Tab, type View } from './url'
 
 const SCOPES: { value: Scope; label: string }[] = [
   { value: 'all', label: 'Show everything' },
@@ -22,16 +23,10 @@ const SCOPES: { value: Scope; label: string }[] = [
   { value: 'local', label: 'Hide internet' },
 ]
 
-function ScopeTag({ local, incoming }: { local: boolean; incoming?: boolean }) {
-  if (local) return <span className="tag local">Inside your network</span>
-  return <span className={incoming ? 'tag warn' : 'tag internet'}>{incoming ? 'From the internet' : 'Internet'}</span>
-}
-
 type Data = {
   machines: Machine[]
   timeline: Timeline
   peers: Peer[]
-  log: Conversation[]
   split: Split
 }
 
@@ -52,7 +47,6 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
   const { range, machine, tab, sort } = view
   const route = view.page
   const setRange = (range: number) => go({ range })
-  const setMachine = (machine: string) => go({ machine })
   const setTab = (tab: Tab) => go({ tab })
   const setSort = (sort: Sort) => go({ sort }, true)
   const setScope = (scope: Scope) => go({ scope })
@@ -102,18 +96,17 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
     const load = async () => {
       if (document.hidden) return
       try {
-        const [st, machines, timeline, peers, log, split] = await Promise.all([
+        const [st, machines, timeline, peers, split] = await Promise.all([
           api.status(),
           api.machines(range, scope),
           api.timeline(range, machine, scope),
           api.peers(range, machine, scope),
-          api.activity(range, machine, scope, query),
           api.split(range, machine),
         ])
         if (!current) return
         setStatus(st)
         setNow(st.now)
-        setData({ machines, timeline, peers, log, split })
+        setData({ machines, timeline, peers, split })
         setFailed(false)
       } catch {
         if (current) setFailed(true)
@@ -127,7 +120,7 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
       clearInterval(id)
       document.removeEventListener('visibilitychange', load)
     }
-  }, [range, machine, query, scope, info])
+  }, [range, machine, scope, info])
 
   const names = useMemo(() => new Map(data?.machines.map((m) => [m.id, m]) ?? []), [data])
   const selected = machine ? names.get(machine) : undefined
@@ -139,7 +132,9 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
   }, [unknownMachine, go])
 
   // The tab title says what is open, which helps with bookmarks and history.
-  const pageTitle = route === 'settings' ? 'Settings' : (selected?.name ?? '')
+  // A destination that is one of the owner's machines is titled by its name.
+  const peerMachine = data?.machines.find((m) => m.ips.includes(view.peer))
+  const pageTitle = route === 'settings' ? 'Settings' : (peerMachine?.name ?? view.peer) || (selected?.name ?? '')
   useEffect(() => {
     document.title = pageTitle ? `${pageTitle} · Tattle` : 'Tattle'
   }, [pageTitle])
@@ -222,14 +217,14 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
       <div className="layout">
         <nav className="machines" aria-label="Machines">
           <h2>Machines</h2>
-          <button className="machine" aria-current={machine === ''} onClick={() => setMachine('')}>
+          <a className="machine" aria-current={machine === ''} href={formatHash({ ...view, machine: '' })}>
             <span className="machine-name">All machines</span>
             <span className="machine-meta">
               {activeMachines} of {data.machines.length} active
             </span>
-          </button>
+          </a>
           {data.machines.map((m) => (
-            <button key={m.id} className="machine" aria-current={machine === m.id} onClick={() => setMachine(m.id)}>
+            <a key={m.id} className="machine" aria-current={machine === m.id} href={formatHash({ ...view, machine: m.id })}>
               <span className="machine-name">
                 {m.name}
                 <span className="kind">{KIND_LABEL[m.kind]}</span>
@@ -238,10 +233,13 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
                 {m.lastSeen ? `${bytes(m.sent + m.received)} · ${ago(m.lastSeen, now)}` : 'No traffic'}
               </span>
               <Spark values={m.spark} />
-            </button>
+            </a>
           ))}
         </nav>
 
+        {view.peer ? (
+          <PeerPage view={view} names={names} now={now} />
+        ) : (
         <main>
           <div className="heading">
             <h1>{selected ? selected.name : 'All machines'}</h1>
@@ -294,7 +292,6 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
               <div className="tabs" role="tablist">
                 <TabButton id="out" tab={tab} set={setTab} label="Reaching out" n={outgoing.length} />
                 <TabButton id="in" tab={tab} set={setTab} label="Coming in" n={incoming.length} />
-                <TabButton id="log" tab={tab} set={setTab} label="Detailed log" />
               </div>
               <input
                 type="search"
@@ -303,25 +300,19 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
-              {tab !== 'log' && (
-                <select aria-label="Sort" value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
-                  <option value="recent">Most recent first</option>
-                  <option value="data">Most data first</option>
-                </select>
-              )}
+              <select aria-label="Sort" value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
+                <option value="recent">Most recent first</option>
+                <option value="data">Most data first</option>
+              </select>
             </div>
 
             <p className="explain">
               {tab === 'out' && 'Websites, services and devices that your machines started a conversation with.'}
-              {tab === 'in' && 'Devices and outside addresses that started a conversation with your machines.'}
-              {tab === 'log' && 'Every kind of connection, one line each, newest first.'}
+              {tab === 'in' && 'Devices and outside addresses that started a conversation with your machines.'} Choose
+              one for the details.
             </p>
 
-            {tab === 'log' ? (
-              <LogList rows={data.log} names={names} now={now} />
-            ) : (
-              <PeerList peers={shown} names={names} now={now} showMachines={!selected} />
-            )}
+            <PeerList peers={shown} names={names} now={now} showMachines={!selected} view={view} />
           </section>
 
           <footer>
@@ -331,30 +322,9 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
             Encrypted connections show where they went, not what was said.
           </footer>
         </main>
+        )}
       </div>
       )}
-    </div>
-  )
-}
-
-export function Logo() {
-  return (
-    <span className="logo">
-      <svg viewBox="0 0 32 32" aria-hidden="true">
-        <rect width="32" height="32" rx="8" />
-        <path d="M8 11h16M16 11v12" />
-        <circle cx="24" cy="22" r="2.6" />
-      </svg>
-      Tattle
-    </span>
-  )
-}
-
-function Tile({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <div className="tile" title={hint}>
-      <span>{label}</span>
-      <strong>{value}</strong>
     </div>
   )
 }
@@ -365,15 +335,6 @@ function TabButton(p: { id: Tab; tab: Tab; set: (t: Tab) => void; label: string;
       {p.label}
       {p.n !== undefined && <span className="badge">{count(p.n)}</span>}
     </button>
-  )
-}
-
-function Amounts({ sent, received }: { sent: number; received: number }) {
-  return (
-    <span className="amounts">
-      <span title="Sent by your machine">↑ {bytes(sent)}</span>
-      <span title="Received by your machine">↓ {bytes(received)}</span>
-    </span>
   )
 }
 
@@ -419,11 +380,7 @@ function SplitBar({ split, info, settingsHref }: { split: Split; info: SettingsI
   )
 }
 
-function Empty({ children }: { children: string }) {
-  return <p className="empty">{children}</p>
-}
-
-function PeerList(p: { peers: Peer[]; names: Map<string, Machine>; now: number; showMachines: boolean }) {
+function PeerList(p: { peers: Peer[]; names: Map<string, Machine>; now: number; showMachines: boolean; view: View }) {
   if (p.peers.length === 0) {
     return <Empty>Nothing here for this time range. Tattle only sees traffic from the moment it was started.</Empty>
   }
@@ -437,8 +394,8 @@ function PeerList(p: { peers: Peer[]; names: Map<string, Machine>; now: number; 
           <li key={peer.direction + peer.name}>
             <div className="row-main">
               <span className="row-title">
-                {other ? other.name : peer.name}
-                {other && <span className="tag">Your {KIND_LABEL[other.kind].toLowerCase()}</span>}
+                <a href={formatHash({ ...p.view, peer: peer.name, dir: peer.direction })}>{other ? other.name : peer.name}</a>
+                {other && <span className="tag">{YOURS_LABEL[other.kind]}</span>}
                 <ScopeTag local={local} incoming={peer.direction === 'in'} />
                 {services.some((s) => s.plain) && <span className="tag warn">Not encrypted</span>}
               </span>
@@ -454,7 +411,12 @@ function PeerList(p: { peers: Peer[]; names: Map<string, Machine>; now: number; 
               {p.showMachines && (
                 <span className="row-who">
                   {peer.direction === 'out' ? 'Contacted by ' : 'Connected to '}
-                  {peer.machines.map((id) => p.names.get(id)?.name ?? id).join(', ')}
+                  {peer.machines.map((id, i) => (
+                    <span key={id}>
+                      {i > 0 && ', '}
+                      <a href={formatHash({ ...p.view, machine: id })}>{p.names.get(id)?.name ?? id}</a>
+                    </span>
+                  ))}
                 </span>
               )}
             </div>
@@ -462,43 +424,6 @@ function PeerList(p: { peers: Peer[]; names: Map<string, Machine>; now: number; 
               <Amounts sent={peer.sent} received={peer.received} />
               <span className="when">
                 {plural(peer.conns, 'time')} · {ago(peer.lastSeen, p.now)}
-              </span>
-            </div>
-          </li>
-        )
-      })}
-    </ul>
-  )
-}
-
-function LogList(p: { rows: Conversation[]; names: Map<string, Machine>; now: number }) {
-  if (p.rows.length === 0) {
-    return <Empty>Nothing matches. Try a longer time range or a different search.</Empty>
-  }
-  return (
-    <ul className="rows">
-      {p.rows.map((c) => {
-        const client = p.names.get(c.clientId)?.name ?? c.clientIp
-        const server = c.domain || p.names.get(c.serverId)?.name || c.serverIp
-        const svc = service(`${c.port}/${c.proto}`)
-        // Amounts are shown from the side of the machine being tracked.
-        const mine = c.clientId !== ''
-        return (
-          <li key={[c.clientIp, c.serverIp, c.port, c.proto, c.domain].join('|')}>
-            <div className="row-main">
-              <span className="row-title">
-                {client} <span className="arrow">→</span> {server}
-                <ScopeTag local={c.local} incoming={!mine} />
-                {svc.plain && <span className="tag warn">Not encrypted</span>}
-              </span>
-              <span className="row-sub">
-                {svc.label} · {c.clientIp} to {c.serverIp}, port {c.port}
-              </span>
-            </div>
-            <div className="row-side">
-              <Amounts sent={mine ? c.sent : c.received} received={mine ? c.received : c.sent} />
-              <span className="when">
-                {plural(c.conns, 'time')} · {ago(c.lastSeen, p.now)}
               </span>
             </div>
           </li>
