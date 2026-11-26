@@ -49,7 +49,7 @@ func main() {
 		showVer   = flag.Bool("version", false, "print the version and exit")
 	)
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "Usage: tattle [options]\n       tattle [--db path] reset-password\n\nOptions:\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage: tattle [options]\n       tattle [--db path] reset-password\n       tattle update [version]\n\nOptions:\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -60,6 +60,17 @@ func main() {
 	if flag.Arg(0) == "reset-password" {
 		if err := resetPassword(*dbPath); err != nil {
 			fmt.Fprintln(os.Stderr, "tattle:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if flag.Arg(0) == "update" {
+		if flag.NArg() > 2 {
+			fmt.Fprintln(os.Stderr, "tattle: update takes at most one release, such as: tattle update v0.1.0")
+			os.Exit(2)
+		}
+		if err := runUpdate(flag.Arg(1)); err != nil {
+			fmt.Fprintln(os.Stderr, "tattle: not updated:", err)
 			os.Exit(1)
 		}
 		return

@@ -3,6 +3,12 @@
 What changed in each release, newest first. Versions follow
 [semantic versioning](https://semver.org).
 
+## Unreleased
+
+- `tattle update` upgrades to the latest release, or to one you name. It
+  downloads the package from GitHub, checks it against the published
+  checksums and installs it with apt.
+
 ## 0.1.0 (2026-11-16)
 
 The first release.
