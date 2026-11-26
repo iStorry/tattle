@@ -124,6 +124,47 @@ func TestNamesComeFromDNSThenFromTheConnection(t *testing.T) {
 	}
 }
 
+func TestANameOnlyLabelsWhoeverAskedForIt(t *testing.T) {
+	tr := newTracker()
+	// The resolver tells the VM that example.com is 198.51.100.7.
+	answer := []byte{0, 1, 0x81, 0x80, 0, 1, 0, 1, 0, 0, 0, 0,
+		7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0, 0, 1, 0, 1,
+		0xc0, 12, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 198, 51, 100, 7}
+	tr.Handle(pkt(gateway, vmMAC, "192.168.1.1", "192.168.1.20", decode.ProtoUDP, 53, 40000, 0, answer), 100, t0)
+	tr.Flush(t0)
+
+	// The container goes to the same address without having asked.
+	tr.Handle(pkt(ctMAC, gateway, "192.168.1.53", "198.51.100.7", decode.ProtoICMP, 0, 0, 0, nil), 98, t0)
+	if d := only(t, tr.Flush(t0)); d.ClientID != "ct-200" || d.Domain != "" {
+		t.Errorf("another machine's lookup named this: %+v", d)
+	}
+
+	// The VM asked over one of its addresses and connects from another.
+	tr.Handle(pkt(vmMAC, gateway, "192.168.1.21", "198.51.100.7", decode.ProtoTCP, 51003, 443, decode.FlagSYN, nil), 74, t0)
+	if d := only(t, tr.Flush(t0)); d.ClientID != "vm-100" || d.Domain != "example.com" {
+		t.Errorf("the machine's own lookup was not applied: %+v", d)
+	}
+}
+
+func TestANameGivenWhenConnectingLabelsLaterTraffic(t *testing.T) {
+	tr := newTracker()
+	req := []byte("GET / HTTP/1.1\r\nHost: relay.example.net\r\n\r\n")
+	tr.Handle(pkt(vmMAC, gateway, "192.168.1.20", "198.51.100.9", decode.ProtoTCP, 51002, 80, decode.FlagSYN, nil), 74, t0)
+	tr.Handle(pkt(vmMAC, gateway, "192.168.1.20", "198.51.100.9", decode.ProtoTCP, 51002, 80, decode.FlagACK, req), 120, t0)
+	tr.Flush(t0)
+
+	// A later exchange with the same address that carries no name of its own.
+	tr.Handle(pkt(vmMAC, gateway, "192.168.1.20", "198.51.100.9", decode.ProtoUDP, 40001, 3478, 0, []byte{0, 1}), 70, t0)
+	if d := only(t, tr.Flush(t0)); d.Domain != "relay.example.net" {
+		t.Errorf("got %+v", d)
+	}
+	// Another machine's traffic to it stays a bare address.
+	tr.Handle(pkt(ctMAC, gateway, "192.168.1.53", "198.51.100.9", decode.ProtoUDP, 40002, 3478, 0, []byte{0, 1}), 70, t0)
+	if d := only(t, tr.Flush(t0)); d.Domain != "" {
+		t.Errorf("got %+v", d)
+	}
+}
+
 func TestTrafficBetweenStrangersIsIgnored(t *testing.T) {
 	tr := newTracker()
 	tr.Handle(pkt(laptopMAC, gateway, "192.168.1.42", "198.51.100.30", decode.ProtoTCP, 50000, 443, decode.FlagSYN, nil), 74, t0)
