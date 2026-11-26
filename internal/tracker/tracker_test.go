@@ -550,3 +550,29 @@ func TestAnnouncedDeviceNamesAreCollected(t *testing.T) {
 		t.Errorf("announcements were counted as traffic: %+v", d)
 	}
 }
+
+func TestDevicesAreNoticedWhenTheyAnnounceAnAddress(t *testing.T) {
+	tr := newTracker()
+	printer := decode.MAC{0xf4, 0x39, 0x09, 0, 0, 0x60}
+
+	// A printer that never talks to a machine still asks who has what.
+	tr.Handle(on(1, decode.Packet{SrcMAC: printer, Announce: ip("192.168.1.60")}), 60, t0)
+	tr.Handle(on(1, decode.Packet{SrcMAC: printer, Announce: ip("192.168.1.60")}), 60, t0.Add(time.Second))
+	// Addresses that only work on the one link say nothing useful.
+	tr.Handle(decode.Packet{SrcMAC: printer, Announce: ip("fe80::1")}, 60, t0)
+	// A machine announcing itself is a machine, not a device.
+	tr.Handle(decode.Packet{SrcMAC: vmMAC, Announce: ip("192.168.1.20")}, 60, t0)
+
+	got := tr.TakeSightings([]string{"vmbr0", "vmbr1"})
+	want := model.Sighting{MAC: "f4:39:09:00:00:60", IP: "192.168.1.60", Iface: "vmbr1", Seen: t0.Add(time.Second).UnixMilli()}
+	if len(got) != 1 || got[0] != want {
+		t.Fatalf("sightings = %+v, want only %+v", got, want)
+	}
+	if again := tr.TakeSightings(nil); len(again) != 0 {
+		t.Errorf("sightings were returned twice: %+v", again)
+	}
+	// Being there is not traffic.
+	if d := tr.Flush(t0); len(d) != 0 {
+		t.Errorf("an announcement was counted as traffic: %+v", d)
+	}
+}

@@ -337,3 +337,29 @@ func TestOwnersAreAttachedToInternetAddresses(t *testing.T) {
 		t.Errorf("status = %s", body)
 	}
 }
+
+func TestMapShowsDevicesAndTheRouter(t *testing.T) {
+	c, srv, st := setUp(t, "correct horse")
+	(&client{t: t, srv: c.srv}).want("GET", "/api/map", "", 401)
+
+	srv.status.SetGateways([]string{"192.168.1.1"})
+	now := time.Now().UnixMilli()
+	if err := st.SavePresence([]model.Sighting{
+		{MAC: "3c:52:a1:00:00:01", IP: "192.168.1.1", Iface: "vmbr0", Seen: now},
+		{MAC: "a4:83:e7:00:00:42", IP: "192.168.1.42", Iface: "vmbr0", Seen: now},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	c.want("PUT", "/api/devices", `{"ip":"192.168.1.42","name":"Laptop"}`, 200)
+
+	body := c.want("GET", "/api/map?range=3600", "", 200)
+	for _, want := range []string{
+		`"id":"dev-3c:52:a1:00:00:01","kind":"router"`,
+		`"id":"dev-a4:83:e7:00:00:42","kind":"device","name":"Laptop"`,
+		`"links":[]`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("map is missing %s:\n%s", want, body)
+		}
+	}
+}

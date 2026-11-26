@@ -1228,6 +1228,263 @@ footer {
   outline-offset: 2px;
 }
 
+/* Network map */
+
+.netmap {
+  display: grid;
+  gap: 16px;
+}
+
+.map-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 16px;
+  align-items: start;
+}
+
+.map-tree {
+  display: grid;
+  justify-items: start;
+}
+
+.map-node {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.map-node:hover {
+  background: var(--hover);
+}
+
+.map-node[aria-pressed='true'] {
+  background: var(--selected);
+  border-color: var(--text);
+}
+
+.map-node[data-linked] {
+  border-color: var(--received);
+}
+
+.map-node[data-quiet] .map-icon,
+.map-node[data-quiet] .map-node-name {
+  opacity: 0.5;
+}
+
+.map-node[data-dim] {
+  opacity: 0.4;
+}
+
+.map-icon {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: var(--text-2);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.map-node-text {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+}
+
+.map-node-name {
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map-node-meta {
+  font-size: 12.5px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map-node .kind {
+  margin-left: 0;
+  flex-shrink: 0;
+}
+
+.map-trunk,
+.map-trunk-slot {
+  width: 250px;
+  max-width: 100%;
+}
+
+/* The wire between one level of the map and the next. */
+.map-wire {
+  width: 2px;
+  height: 18px;
+  margin-left: 20px;
+  background: var(--line);
+}
+
+.map-bridge {
+  width: 100%;
+}
+
+.map-bridge + .map-bridge {
+  margin-top: 22px;
+}
+
+.map-bridge-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  background: var(--hover);
+  border-radius: 10px;
+  padding: 8px 12px;
+}
+
+.map-bridge-head span {
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.map-branches {
+  margin-left: 20px;
+  border-left: 2px solid var(--line);
+  padding: 4px 0 0 18px;
+}
+
+.map-group {
+  position: relative;
+  padding-top: 12px;
+}
+
+/* The tick joining each group to the bridge's wire. */
+.map-group::before {
+  content: '';
+  position: absolute;
+  left: -18px;
+  top: 21px;
+  width: 12px;
+  height: 2px;
+  background: var(--line);
+}
+
+.map-group:last-child::after {
+  content: '';
+  position: absolute;
+  left: -20px;
+  top: 23px;
+  bottom: 0;
+  width: 2px;
+  background: var(--surface);
+}
+
+.map-group h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.map-group h3 span {
+  font-weight: 500;
+  color: var(--text-3);
+}
+
+.map-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+}
+
+.map-detail {
+  position: sticky;
+  top: 16px;
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+
+.map-detail h2 {
+  margin-bottom: 0;
+}
+
+.map-detail-title {
+  font-size: 18px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.map-detail .device-name {
+  margin-top: 0;
+}
+
+.map-detail .device-name .input {
+  width: 100%;
+}
+
+.map-facts {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.map-facts .mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+}
+
+.map-talked-title {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.map-talked {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  display: grid;
+  gap: 6px;
+}
+
+.map-talked li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 13.5px;
+  color: var(--text-2);
+}
+
+.map-talked .toggle {
+  margin-top: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map-talked span {
+  white-space: nowrap;
+}
+
+a.button {
+  color: inherit;
+  text-decoration: none;
+}
+
 /* Narrow screens: machines become a horizontal strip above the content. */
 
 @media (max-width: 860px) {
@@ -1288,5 +1545,13 @@ footer {
     display: flex;
     gap: 12px;
     align-items: baseline;
+  }
+
+  .map-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .map-detail {
+    position: static;
   }
 }

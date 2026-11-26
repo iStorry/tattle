@@ -23,6 +23,9 @@ guests, and nothing leaves the host.
   which services.
 - **Names for your devices.** Laptops, phones and televisions appear by the
   name they announce, or one you give them.
+- **A map of your network.** The router, each bridge, your machines and
+  every other device heard on the network, with who talked to whom. Tattle
+  finds them by listening only.
 - **Who owns an address.** "Cloudflare, Inc." for an address that has no
   name, from a table kept on the host.
 - **A health page** that says whether Tattle is working and what to do if

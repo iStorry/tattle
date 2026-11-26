@@ -5,6 +5,13 @@ What changed in each release, newest first. Versions follow
 
 ## Unreleased
 
+- A network map: the router, each bridge, the machines on the host and
+  every other device heard on the network, with when each was last heard
+  and which machines it talked to. Devices are found by listening to the
+  announcements they already make (ARP and IPv6 neighbour discovery);
+  Tattle still sends nothing. Tattle now keeps the hardware address,
+  address and first and last time heard of devices that never talk to a
+  VM, a container or the host. See docs/privacy.md.
 - `tattle update` upgrades to the latest release, or to one you name. It
   downloads the package from GitHub, checks it against the published
   checksums and installs it with apt.

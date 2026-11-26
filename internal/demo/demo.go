@@ -33,8 +33,52 @@ type machine struct {
 	inbound []dest // ip is the caller; port is the service on this machine
 }
 
+// Router is the pretend network's way out to the internet.
+const Router = "192.168.1.1"
+
+const bridge = "vmbr0"
+
+// gadget is something on the pretend network that is not a machine.
+type gadget struct {
+	mac, ip string
+	// quiet is how long ago it was last heard from; 0 means it is there now.
+	quiet time.Duration
+}
+
+// gadgets are the devices the map shows around the machines. Some talk to
+// the machines; the last few are only ever heard announcing themselves.
+var gadgets = []gadget{
+	{mac: "3c:52:a1:00:00:01", ip: Router},
+	{mac: "a4:83:e7:00:00:42", ip: laptop},
+	{mac: "da:a1:19:00:00:57", ip: phone},
+	{mac: "64:16:66:00:00:80", ip: tv},
+	{mac: "48:3f:da:00:00:91", ip: "192.168.1.91"},
+	{mac: "48:3f:da:00:00:92", ip: "192.168.1.92"},
+	{mac: "f4:39:09:00:00:60", ip: printer},
+	{mac: "b8:27:eb:00:00:64", ip: "192.168.1.64"},
+	{mac: "0c:8b:95:00:00:85", ip: "192.168.1.133"},
+	{mac: "7c:2e:bd:00:00:71", ip: "192.168.1.71", quiet: 5 * time.Hour},
+	{mac: "5e:0f:c2:00:00:77", ip: "192.168.1.77", quiet: 3 * 24 * time.Hour},
+}
+
+// heard returns the gadgets' sightings as of now: once long ago, so each
+// has a first-seen date, and again when it was last around.
+func heard(now time.Time, first bool) []model.Sighting {
+	var out []model.Sighting
+	for i, g := range gadgets {
+		at := now.Add(-g.quiet)
+		if first {
+			at = now.Add(-time.Duration(34-2*i) * 24 * time.Hour)
+		} else if g.quiet > 0 {
+			continue
+		}
+		out = append(out, model.Sighting{MAC: g.mac, IP: g.ip, Iface: bridge, Seen: at.UnixMilli()})
+	}
+	return out
+}
+
 const (
-	router  = "192.168.1.1"
+	printer = "192.168.1.60"
 	laptop  = "192.168.1.42"
 	phone   = "192.168.1.57"
 	tv      = "192.168.1.80"
@@ -58,7 +102,7 @@ func lab() []machine {
 	ntp := dest{domain: "time.cloudflare.com", ip: "203.0.113.123", port: 123, proto: "udp", up: 90, down: 90, weight: 0.05}
 	return []machine{
 		{
-			Machine: model.Machine{ID: "host", Kind: "host", Name: "pve", Node: "pve", MACs: []string{"bc:24:11:00:00:10"}, IPs: []string{hostIP}},
+			Machine: model.Machine{ID: "host", Kind: "host", Name: "pve", Node: "pve", MACs: []string{"bc:24:11:00:00:10"}, IPs: []string{hostIP}, Bridges: []string{bridge}},
 			dests: []dest{
 				dns, ntp,
 				{domain: "download.proxmox.com", ip: "198.51.100.14", port: 443, proto: "tcp", up: 4_000, down: 900_000, weight: 0.01},
@@ -67,7 +111,7 @@ func lab() []machine {
 			inbound: []dest{{ip: laptop, port: 8006, proto: "tcp", up: 12_000, down: 180_000, weight: 0.15}},
 		},
 		{
-			Machine: model.Machine{ID: "vm-100", Kind: "vm", VMID: 100, Name: "home-assistant", Node: "pve", MACs: []string{"bc:24:11:00:01:00"}, IPs: []string{hass}},
+			Machine: model.Machine{ID: "vm-100", Kind: "vm", VMID: 100, Name: "home-assistant", Node: "pve", MACs: []string{"bc:24:11:00:01:00"}, IPs: []string{hass}, Bridges: []string{bridge}},
 			dests: []dest{
 				dns, ntp,
 				{domain: "api.github.com", ip: "198.51.100.30", port: 443, proto: "tcp", up: 2_500, down: 40_000, weight: 0.03},
@@ -82,7 +126,7 @@ func lab() []machine {
 			},
 		},
 		{
-			Machine: model.Machine{ID: "vm-101", Kind: "vm", VMID: 101, Name: "docker-host", Node: "pve", MACs: []string{"bc:24:11:00:01:01"}, IPs: []string{docker}},
+			Machine: model.Machine{ID: "vm-101", Kind: "vm", VMID: 101, Name: "docker-host", Node: "pve", MACs: []string{"bc:24:11:00:01:01"}, IPs: []string{docker}, Bridges: []string{bridge}},
 			dests: []dest{
 				dns, ntp,
 				{domain: "registry-1.docker.io", ip: "198.51.100.60", port: 443, proto: "tcp", up: 9_000, down: 38_000_000, weight: 0.02},
@@ -101,7 +145,7 @@ func lab() []machine {
 			inbound: []dest{{ip: laptop, port: 22, proto: "tcp", up: 30_000, down: 70_000, weight: 0.04}},
 		},
 		{
-			Machine: model.Machine{ID: "vm-102", Kind: "vm", VMID: 102, Name: "windows-11", Node: "pve", MACs: []string{"bc:24:11:00:01:02"}, IPs: []string{windows}},
+			Machine: model.Machine{ID: "vm-102", Kind: "vm", VMID: 102, Name: "windows-11", Node: "pve", MACs: []string{"bc:24:11:00:01:02"}, IPs: []string{windows}, Bridges: []string{bridge}},
 			dests: []dest{
 				dns,
 				{domain: "settings-win.data.microsoft.com", ip: "198.51.100.90", port: 443, proto: "tcp", up: 6_000, down: 9_000, weight: 0.3},
@@ -114,7 +158,7 @@ func lab() []machine {
 			inbound: []dest{{ip: laptop, port: 3389, proto: "tcp", up: 400_000, down: 6_000_000, weight: 0.03}},
 		},
 		{
-			Machine: model.Machine{ID: "vm-103", Kind: "vm", VMID: 103, Name: "truenas", Node: "pve", MACs: []string{"bc:24:11:00:01:03"}, IPs: []string{nas}},
+			Machine: model.Machine{ID: "vm-103", Kind: "vm", VMID: 103, Name: "truenas", Node: "pve", MACs: []string{"bc:24:11:00:01:03"}, IPs: []string{nas}, Bridges: []string{bridge}},
 			dests: []dest{
 				dns, ntp,
 				{domain: "update.freenas.org", ip: "198.51.100.100", port: 443, proto: "tcp", up: 2_000, down: 14_000, weight: 0.01},
@@ -126,7 +170,7 @@ func lab() []machine {
 			},
 		},
 		{
-			Machine: model.Machine{ID: "ct-200", Kind: "ct", VMID: 200, Name: "pihole", Node: "pve", MACs: []string{"bc:24:11:00:02:00"}, IPs: []string{pihole}},
+			Machine: model.Machine{ID: "ct-200", Kind: "ct", VMID: 200, Name: "pihole", Node: "pve", MACs: []string{"bc:24:11:00:02:00"}, IPs: []string{pihole}, Bridges: []string{bridge}},
 			dests: []dest{
 				ntp,
 				{domain: "", ip: "9.9.9.9", port: 53, proto: "udp", up: 2_400, down: 5_200, weight: 0.95},
@@ -140,7 +184,7 @@ func lab() []machine {
 			},
 		},
 		{
-			Machine: model.Machine{ID: "ct-201", Kind: "ct", VMID: 201, Name: "nginx-proxy", Node: "pve", MACs: []string{"bc:24:11:00:02:01"}, IPs: []string{proxy}},
+			Machine: model.Machine{ID: "ct-201", Kind: "ct", VMID: 201, Name: "nginx-proxy", Node: "pve", MACs: []string{"bc:24:11:00:02:01"}, IPs: []string{proxy}, Bridges: []string{bridge}},
 			dests: []dest{
 				dns,
 				{domain: "acme-v02.api.letsencrypt.org", ip: "198.51.100.110", port: 443, proto: "tcp", up: 7_000, down: 11_000, weight: 0.004},
@@ -154,7 +198,7 @@ func lab() []machine {
 			},
 		},
 		{
-			Machine: model.Machine{ID: "ct-202", Kind: "ct", VMID: 202, Name: "jellyfin", Node: "pve", MACs: []string{"bc:24:11:00:02:02"}, IPs: []string{jelly}},
+			Machine: model.Machine{ID: "ct-202", Kind: "ct", VMID: 202, Name: "jellyfin", Node: "pve", MACs: []string{"bc:24:11:00:02:02"}, IPs: []string{jelly}, Bridges: []string{bridge}},
 			dests: []dest{
 				dns,
 				{domain: "api.themoviedb.org", ip: "198.51.100.120", port: 443, proto: "tcp", up: 2_600, down: 48_000, weight: 0.06},
@@ -242,7 +286,15 @@ func Run(ctx context.Context, st *store.Store) error {
 	now := time.Now()
 	// Some of the pretend devices announce a name; the rest are left for
 	// the visitor to name.
-	if err := st.SaveAnnounced(map[string]string{laptop: "macbook-pro", phone: "pixel-8", tv: "living-room-tv"}, now); err != nil {
+	if err := st.SaveAnnounced(map[string]string{laptop: "macbook-pro", phone: "pixel-8", tv: "living-room-tv",
+		printer: "hp-envy-6000", "192.168.1.64": "raspberrypi"}, now); err != nil {
+		return fmt.Errorf("demo: %w", err)
+	}
+	var lastHeard []model.Sighting
+	for _, g := range gadgets {
+		lastHeard = append(lastHeard, model.Sighting{MAC: g.mac, IP: g.ip, Iface: bridge, Seen: now.Add(-g.quiet).UnixMilli()})
+	}
+	if err := st.SavePresence(append(heard(now, true), lastHeard...)); err != nil {
 		return fmt.Errorf("demo: %w", err)
 	}
 	var history []model.FlowDelta
@@ -270,6 +322,9 @@ func Run(ctx context.Context, st *store.Store) error {
 		case t := <-tick.C:
 			// Lean towards busier than the backfill so the page visibly moves.
 			if err := st.Apply(minute(l, t, now, 4*every.Seconds()/60)); err != nil {
+				return fmt.Errorf("demo: %w", err)
+			}
+			if err := st.SavePresence(heard(t, false)); err != nil {
 				return fmt.Errorf("demo: %w", err)
 			}
 		}
