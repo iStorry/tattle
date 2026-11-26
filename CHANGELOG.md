@@ -3,7 +3,7 @@
 What changed in each release, newest first. Versions follow
 [semantic versioning](https://semver.org).
 
-## Unreleased
+## 0.1.1 (2026-11-26)
 
 - A network map: the router, each bridge, the machines on the host and
   every other device heard on the network, with when each was last heard
