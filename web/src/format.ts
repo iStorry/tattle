@@ -15,6 +15,14 @@ export function plural(n: number, one: string, many = `${one}s`): string {
   return `${count(n)} ${n === 1 ? one : many}`
 }
 
+/**
+ * How many connections were started. Traffic with none started in the time
+ * range belongs to a connection that was already open when it began.
+ */
+export function times(conns: number): string {
+  return conns === 0 ? 'already connected' : plural(conns, 'time')
+}
+
 /** How long ago something happened, in everyday words. */
 export function ago(then: number, now: number): string {
   if (!then) return 'never'
@@ -50,7 +58,8 @@ export function moment(unixSeconds: number, spanSeconds: number): string {
   return `${d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}, ${time}`
 }
 
-type Service = { label: string; plain?: boolean }
+// "bare" marks a label that is only the port, for a service with no everyday name.
+type Service = { label: string; plain?: boolean; bare?: boolean }
 
 // What a port is normally used for, in words a non-specialist would use.
 // "plain" marks services that send their contents unencrypted.
@@ -102,7 +111,7 @@ export function service(key: string): Service {
   if (known) return known
   const [port, proto] = key.split('/')
   if (proto === 'icmp') return { label: 'Ping' }
-  return { label: `Port ${port} (${proto.toUpperCase()})` }
+  return { label: `Port ${port} (${proto.toUpperCase()})`, bare: true }
 }
 
 export const KIND_LABEL = { vm: 'VM', ct: 'Container', host: 'Host' } as const

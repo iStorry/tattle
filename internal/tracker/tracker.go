@@ -78,6 +78,12 @@ type flow struct {
 
 type addrPair struct{ client, server netip.Addr }
 
+// ownerAddr is an address as one machine knows it.
+type ownerAddr struct {
+	id   string
+	addr netip.Addr
+}
+
 // helloBuf joins the pieces of a TLS ClientHello in order, so a server
 // name that falls in the second or third packet can still be read. Pieces
 // are placed by TCP sequence number, or by handshake offset for QUIC.
@@ -171,7 +177,7 @@ type Tracker struct {
 	hasV4    map[string]bool         // machine id -> an IPv4 address is known
 	hasV6    map[string]bool         // machine id -> an IPv6 address is known
 	dnsPair  map[addrPair]string     // what this client was told this address is called
-	dnsAny   map[netip.Addr]string   // what anyone was told this address is called
+	dnsOwner map[ownerAddr]string    // the same, by machine: it may ask over IPv4 and connect over IPv6
 	learned  map[netip.Addr]struct{} // addresses learned from ARP/NDP, kept across reloads
 }
 
@@ -183,7 +189,7 @@ func New() *Tracker {
 		hasV4:    map[string]bool{},
 		hasV6:    map[string]bool{},
 		dnsPair:  map[addrPair]string{},
-		dnsAny:   map[netip.Addr]string{},
+		dnsOwner: map[ownerAddr]string{},
 		learned:  map[netip.Addr]struct{}{},
 	}
 }
@@ -270,15 +276,14 @@ func (t *Tracker) Handle(p decode.Packet, wireLen int, now time.Time) {
 
 	// Learn names from every DNS answer on the bridge, including answers to
 	// devices Tattle does not track, so later connections can be labelled.
+	// A name only ever labels connections from whoever asked for it: many
+	// sites share an address, and a machine that goes to an address
+	// directly was never told any of their names.
 	if p.Proto == decode.ProtoUDP && p.SrcPort == 53 {
 		if name, addrs, ok := decode.ParseDNSResponse(p.Payload); ok {
-			if len(t.dnsAny) > maxDNSNames {
-				t.dnsAny = map[netip.Addr]string{}
-				t.dnsPair = map[addrPair]string{}
-			}
+			asker := t.owner(p.DstIP, p.DstMAC)
 			for _, a := range addrs {
-				t.dnsAny[a] = name
-				t.dnsPair[addrPair{p.DstIP, a}] = name
+				t.learnName(asker, p.DstIP, a, name)
 			}
 		}
 	}
@@ -330,8 +335,8 @@ func (t *Tracker) Handle(p decode.Packet, wireLen int, now time.Time) {
 		f = &flow{isNew: true, sniffView: -1}
 		if name, ok := t.dnsPair[addrPair{key.client, key.server}]; ok {
 			f.domain = name
-		} else {
-			f.domain = t.dnsAny[key.server]
+		} else if id := t.owner(key.client, clientMACOf(p, fromClient)); id != "" {
+			f.domain = t.dnsOwner[ownerAddr{id, key.server}]
 		}
 		t.flows[key] = f
 	}
@@ -417,6 +422,7 @@ func (t *Tracker) Handle(p decode.Packet, wireLen int, now time.Time) {
 			}
 			if name != "" {
 				f.domain, f.named = name, true
+				t.learnFromConnection(key.client, clientMAC, key.server, name)
 			}
 		}
 	}
@@ -444,6 +450,7 @@ func (t *Tracker) Handle(p decode.Packet, wireLen int, now time.Time) {
 			}
 			if name != "" {
 				f.domain, f.named = name, true
+				t.learnFromConnection(key.client, clientMAC, key.server, name)
 			}
 			if done {
 				t.dropHello(f)
@@ -453,6 +460,43 @@ func (t *Tracker) Handle(p decode.Packet, wireLen int, now time.Time) {
 			t.dropHello(f) // the name never came; stop holding the pieces
 		}
 	}
+}
+
+// clientMACOf returns the network card of the end that started the
+// conversation a packet belongs to.
+func clientMACOf(p decode.Packet, fromClient bool) decode.MAC {
+	if fromClient {
+		return p.SrcMAC
+	}
+	return p.DstMAC
+}
+
+// learnName remembers what a client calls an address, from a DNS answer it
+// was sent or from the name it gave when connecting, so its later
+// connections to that address carry the name too.
+func (t *Tracker) learnName(id string, client, addr netip.Addr, name string) {
+	if len(t.dnsPair) > maxDNSNames {
+		t.dnsPair = map[addrPair]string{}
+		t.dnsOwner = map[ownerAddr]string{}
+	}
+	t.dnsPair[addrPair{client, addr}] = name
+	if id != "" {
+		t.dnsOwner[ownerAddr{id, addr}] = name
+	}
+}
+
+// learnFromConnection remembers the name a client gave when connecting, so
+// its other traffic to that address is listed with it rather than as a bare
+// address. A name the client looked up is kept: it is what the client meant.
+func (t *Tracker) learnFromConnection(client netip.Addr, mac decode.MAC, addr netip.Addr, name string) {
+	id := t.owner(client, mac)
+	if _, ok := t.dnsPair[addrPair{client, addr}]; ok {
+		return
+	}
+	if _, ok := t.dnsOwner[ownerAddr{id, addr}]; ok && id != "" {
+		return
+	}
+	t.learnName(id, client, addr, name)
 }
 
 func (t *Tracker) dropHello(f *flow) {

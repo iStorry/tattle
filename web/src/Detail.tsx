@@ -1,8 +1,9 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { api, countryName, deviceLabel, isAddress, type Conversation, type Device, type Devices, type Machine, type PeerDetail } from './api'
 import { TrafficChart } from './Chart'
-import { ago, bytes, count, KIND_LABEL, plural, service, YOURS_LABEL } from './format'
+import { ago, bytes, count, KIND_LABEL, service, times, YOURS_LABEL } from './format'
 import { Amounts, Empty, ScopeTag, Tile } from './parts'
+import { usePolling } from './poll'
 import { formatHash, RANGES, type View } from './url'
 
 /** Everything about one destination or caller: who talks to it, how, and how much. */
@@ -18,28 +19,19 @@ export function PeerPage(p: {
   const [detail, setDetail] = useState<PeerDetail | null>(null)
   const [failed, setFailed] = useState(false)
 
-  useEffect(() => {
-    let current = true
-    const load = () => {
-      if (document.hidden) return
-      api
-        .peer(range, dir, peer, machine)
-        .then((d) => {
-          if (!current) return
-          setDetail(d)
-          setFailed(false)
-        })
-        .catch(() => current && setFailed(true))
-    }
-    load()
-    const id = setInterval(load, 3000)
-    document.addEventListener('visibilitychange', load)
-    return () => {
-      current = false
-      clearInterval(id)
-      document.removeEventListener('visibilitychange', load)
-    }
-  }, [range, dir, peer, machine])
+  usePolling(
+    async (wanted) => {
+      try {
+        const d = await api.peer(range, dir, peer, machine)
+        if (!wanted()) return
+        setDetail(d)
+        setFailed(false)
+      } catch {
+        if (wanted()) setFailed(true)
+      }
+    },
+    [range, dir, peer, machine],
+  )
 
   const selected = machine ? names.get(machine) : undefined
   const back = (
@@ -69,7 +61,8 @@ export function PeerPage(p: {
   const device = !other && isAddress(fresh.name) ? deviceLabel(devices, fresh.name) : ''
   const others = fresh.ips.filter((ip) => ip !== fresh.name)
   const addresses = others.length > 0 ? others : other || device ? [fresh.name] : []
-  const quiet = fresh.conns === 0
+  // Traffic with no new connection is a connection opened before the range began.
+  const quiet = fresh.conns === 0 && fresh.sent + fresh.received === 0
 
   return (
     <main>
@@ -141,7 +134,7 @@ export function PeerPage(p: {
           <section className="tiles">
             <Tile label="Sent to it" value={bytes(fresh.sent)} />
             <Tile label="Received from it" value={bytes(fresh.received)} />
-            <Tile label="Connections" value={count(fresh.conns)} />
+            <Tile label="Connections started" value={fresh.conns === 0 ? 'None' : count(fresh.conns)} />
             <Tile label={incoming ? 'Machines reached' : 'Machines using it'} value={count(byMachine.length)} />
           </section>
 
@@ -167,7 +160,7 @@ export function PeerPage(p: {
                     <div className="row-side">
                       <Amounts sent={m.sent} received={m.received} />
                       <span className="when">
-                        {plural(m.conns, 'time')} · {ago(m.lastSeen, now)}
+                        {times(m.conns)} · {ago(m.lastSeen, now)}
                       </span>
                     </div>
                   </li>
@@ -202,14 +195,17 @@ export function PeerPage(p: {
                         <td className="mono">{incoming ? c.clientIp : c.serverIp}</td>
                         <td>
                           {svc.label}
-                          <span className="port">
-                            {' '}
-                            port {c.port}/{c.proto}
-                          </span>
+                          {/* The port is not repeated when it is all the label says. */}
+                          {!svc.bare && c.proto !== 'icmp' && (
+                            <span className="port">
+                              {' '}
+                              port {c.port}/{c.proto}
+                            </span>
+                          )}
                         </td>
                         <td className="num">{bytes(c.sent)}</td>
                         <td className="num">{bytes(c.received)}</td>
-                        <td className="num">{count(c.conns)}</td>
+                        <td className="num">{c.conns === 0 ? '–' : count(c.conns)}</td>
                         <td>{ago(c.lastSeen, now)}</td>
                       </tr>
                     )
