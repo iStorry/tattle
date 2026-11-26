@@ -75,10 +75,12 @@ releases page beside it and run `sha256sum -c SHA256SUMS --ignore-missing`.
 
 ### Upgrading and removing
 
-- **Upgrade:** run the install command again, or install a newer package.
-  History, settings and the password are kept.
-- **A particular release,** including a pre-release: put
-  `TATTLE_VERSION=v0.1.0` in front of `bash` in the install command.
+- **Upgrade:** run `tattle update` as root. It downloads the latest release
+  for this machine from GitHub, checks it against the published checksums
+  and installs it with apt, the same as the install command, which also
+  still works. History, settings and the password are kept.
+- **A particular release,** including a pre-release: `tattle update v0.1.0`,
+  or put `TATTLE_VERSION=v0.1.0` in front of `bash` in the install command.
 - **Remove:** run the uninstaller. It stops and removes Tattle, then asks
   whether to delete the history, the password and the certificate too.
   Keeping them means reinstalling carries on where it left off.
