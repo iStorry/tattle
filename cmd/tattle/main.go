@@ -26,6 +26,7 @@ import (
 	"github.com/istorry/tattle/internal/guests"
 	"github.com/istorry/tattle/internal/model"
 	"github.com/istorry/tattle/internal/owners"
+	"github.com/istorry/tattle/internal/routes"
 	"github.com/istorry/tattle/internal/serve"
 	"github.com/istorry/tattle/internal/store"
 	"github.com/istorry/tattle/internal/tracker"
@@ -111,6 +112,7 @@ func run(o options) error {
 	errc := make(chan error, 8)
 	if o.demo {
 		status.LocalNets = []netip.Prefix{netip.MustParsePrefix("192.168.1.0/24")}
+		status.SetGateways([]string{demo.Router})
 	} else {
 		status.LocalNets = hostNetworks()
 	}
@@ -303,6 +305,7 @@ func startLive(ctx context.Context, st *store.Store, status *api.Status, ifaceFl
 			}
 		}
 		status.SetMachines(vms, cts, err)
+		status.SetGateways(routes.Gateways())
 		machines = append([]model.Machine{hostMachine(names)}, machines...)
 		tr.SetMachines(machines)
 		learned := tr.MachineIPs()
@@ -363,6 +366,9 @@ func startLive(ctx context.Context, st *store.Store, status *api.Status, ifaceFl
 				}
 				if err := st.SaveAnnounced(tr.TakeDeviceNames(), now); err != nil {
 					log.Printf("saving device names: %v", err)
+				}
+				if err := st.SavePresence(tr.TakeSightings(names)); err != nil {
+					log.Printf("saving devices on the network: %v", err)
 				}
 			case <-refresh.C:
 				reload()
@@ -440,7 +446,7 @@ func hostMachine(watched []string) model.Machine {
 	if err != nil {
 		name = "Proxmox host"
 	}
-	m := model.Machine{ID: model.HostID, Kind: "host", Name: name, Node: name, MACs: []string{}, IPs: []string{}}
+	m := model.Machine{ID: model.HostID, Kind: "host", Name: name, Node: name, MACs: []string{}, IPs: []string{}, Bridges: watched}
 	for _, w := range watched {
 		if ifi, err := net.InterfaceByName(w); err == nil && len(ifi.HardwareAddr) == 6 {
 			m.MACs = append(m.MACs, ifi.HardwareAddr.String())

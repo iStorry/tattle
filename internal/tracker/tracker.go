@@ -16,6 +16,7 @@ const (
 	maxFlows     = 200_000
 	maxDNSNames  = 100_000
 	maxAnnounced = 5_000
+	maxSightings = 5_000
 	tcpIdle      = 5 * time.Minute
 	otherIdle    = 60 * time.Second
 	closeLinger  = 5 * time.Second
@@ -163,6 +164,17 @@ func (h *helloBuf) check(truncated bool) (name string, done bool) {
 	return "", truncated || len(h.data) > maxHelloBytes || h.packets >= maxHelloSegments
 }
 
+// sightKey is one address of one device that is not a machine.
+type sightKey struct {
+	mac decode.MAC
+	ip  netip.Addr
+}
+
+type sighting struct {
+	iface int
+	at    time.Time
+}
+
 // Tracker is safe for concurrent use by several capture goroutines.
 type Tracker struct {
 	mu    sync.Mutex
@@ -171,6 +183,9 @@ type Tracker struct {
 	// the last time they were collected.
 	announced map[netip.Addr]string
 	hellos    int // connections currently joining a ClientHello
+	// sightings holds the devices heard announcing an address since the
+	// last time they were collected.
+	sightings map[sightKey]sighting
 
 	macOwner map[decode.MAC]string   // MAC -> machine id
 	ipOwner  map[netip.Addr]string   // address -> machine id
@@ -268,6 +283,8 @@ func (t *Tracker) Handle(p decode.Packet, wireLen int, now time.Time) {
 			t.ipOwner[p.Announce] = id
 			t.learned[p.Announce] = struct{}{}
 			t.markFamily(id, p.Announce)
+		} else {
+			t.sight(p, now)
 		}
 	}
 	if !p.SrcIP.IsValid() {
@@ -525,6 +542,39 @@ func (t *Tracker) TakeDeviceNames() map[string]string {
 		out[addr.String()] = name
 	}
 	t.announced = nil
+	return out
+}
+
+// sight notes a device that is not a machine saying an address is its own.
+// Only that it is there is kept, never what it does.
+func (t *Tracker) sight(p decode.Packet, now time.Time) {
+	ip := p.Announce.Unmap()
+	if p.SrcMAC.IsMulticast() || p.SrcMAC == (decode.MAC{}) || ip.IsLinkLocalUnicast() || ip.IsMulticast() {
+		return
+	}
+	if t.sightings == nil {
+		t.sightings = map[sightKey]sighting{}
+	}
+	key := sightKey{p.SrcMAC, ip}
+	if _, known := t.sightings[key]; known || len(t.sightings) < maxSightings {
+		t.sightings[key] = sighting{p.Iface, now}
+	}
+}
+
+// TakeSightings returns the devices heard since the last call. ifaces names
+// the captures, in the order their packets are numbered.
+func (t *Tracker) TakeSightings(ifaces []string) []model.Sighting {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	out := make([]model.Sighting, 0, len(t.sightings))
+	for k, s := range t.sightings {
+		iface := ""
+		if s.iface >= 0 && s.iface < len(ifaces) {
+			iface = ifaces[s.iface]
+		}
+		out = append(out, model.Sighting{MAC: k.mac.String(), IP: k.ip.String(), Iface: iface, Seen: s.at.UnixMilli()})
+	}
+	t.sightings = nil
 	return out
 }
 

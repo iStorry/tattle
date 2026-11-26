@@ -18,6 +18,7 @@ import { Spark, TrafficChart } from './Chart'
 import { ago, bytes, count, KIND_LABEL, plural, service, times, YOURS_LABEL } from './format'
 import { PeerPage } from './Detail'
 import { HealthPage, StateBadge } from './Health'
+import { MapPage } from './Map'
 import { WhatsNew } from './News'
 import { Amounts, Empty, Logo, ScopeTag, Tile } from './parts'
 import { SettingsPage } from './Settings'
@@ -151,7 +152,8 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
   // A destination that is one of the owner's machines is titled by its name.
   const peerMachine = data?.machines.find((m) => m.ips.includes(view.peer))
   const peerName = peerMachine?.name || (data && deviceLabel(data.devices, view.peer)) || view.peer
-  const pageTitle = route === 'settings' ? 'Settings' : route === 'health' ? 'Health' : peerName || (selected?.name ?? '')
+  const pageTitle =
+    route === 'settings' ? 'Settings' : route === 'health' ? 'Health' : route === 'map' ? 'Network map' : peerName || (selected?.name ?? '')
   useEffect(() => {
     document.title = pageTitle ? `${pageTitle} · Tattle` : 'Tattle'
   }, [pageTitle])
@@ -196,7 +198,7 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
           {status.demo ? 'Demo data' : `Watching ${status.interfaces.join(', ')}`}
           {failed && ' · connection lost, retrying'}
         </span>
-        {route === 'dashboard' && (
+        {(route === 'dashboard' || route === 'map') && (
           <div className="segmented" role="group" aria-label="Time range">
             {RANGES.filter(
               // Longer ranges are offered once that much history is kept.
@@ -211,6 +213,11 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
         {route !== 'dashboard' && (
           <a className="nav-link" href={formatHash({ ...view, page: 'dashboard' })}>
             Dashboard
+          </a>
+        )}
+        {route !== 'map' && (
+          <a className="nav-link" href={formatHash({ ...view, page: 'map' })}>
+            Map
           </a>
         )}
         {route !== 'health' && (
@@ -239,7 +246,9 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
         </p>
       )}
 
-      {route === 'health' ? (
+      {route === 'map' ? (
+        <MapPage view={view} now={now} rangePhrase={rangeLabel} onPick={(node) => go({ node })} />
+      ) : route === 'health' ? (
         <HealthPage backHref={formatHash({ ...view, page: 'dashboard' })} />
       ) : route === 'settings' ? (
         <SettingsPage

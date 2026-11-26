@@ -40,8 +40,23 @@ type Status struct {
 	// Cert reports the HTTPS certificate in use; nil when serving plain HTTP.
 	Cert func() CertInfo
 
-	mu    sync.Mutex
-	found machinesFound
+	mu       sync.Mutex
+	found    machinesFound
+	gateways []string
+}
+
+// SetGateways records the addresses the host sends internet traffic
+// through, which is how the map knows which device is the router.
+func (s *Status) SetGateways(ips []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.gateways = ips
+}
+
+func (s *Status) routers() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.gateways
 }
 
 // machinesFound is the outcome of the last look for VMs and containers.
@@ -107,6 +122,7 @@ func New(st *store.Store, status *Status, ui fs.FS, requireLogin bool) *Server {
 	s.mux.HandleFunc("GET /api/peers", s.handlePeers)
 	s.mux.HandleFunc("GET /api/peer", s.handlePeer)
 	s.mux.HandleFunc("GET /api/new", s.handleNew)
+	s.mux.HandleFunc("GET /api/map", s.handleMap)
 	s.mux.HandleFunc("GET /api/devices", s.handleDevices)
 	s.mux.HandleFunc("PUT /api/devices", s.handleNameDevice)
 	s.mux.Handle("GET /", http.FileServerFS(ui))
@@ -248,6 +264,12 @@ func (s *Server) handlePeers(w http.ResponseWriter, r *http.Request) {
 	for i := range v {
 		v[i].Owner = s.ownerOf(v[i].IP, v[i].Local)
 	}
+	writeJSON(w, v, err)
+}
+
+func (s *Server) handleMap(w http.ResponseWriter, r *http.Request) {
+	now := time.Now()
+	v, err := s.store.Map(r.Context(), since(r, now), now, s.status.routers())
 	writeJSON(w, v, err)
 }
 

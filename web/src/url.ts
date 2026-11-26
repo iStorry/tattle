@@ -5,6 +5,7 @@ import type { Scope } from './api'
 //
 //   #/?machine=vm-100&range=24h&tab=in&show=internet&sort=data&q=docker
 //   #/?peer=api.github.com&range=24h
+//   #/map?range=24h&node=vm-100
 //   #/settings
 //   #/health
 //
@@ -26,7 +27,7 @@ export const RANGES = [
 const DEFAULT_RANGE = RANGES[1]
 
 export type View = {
-  page: 'dashboard' | 'settings' | 'health'
+  page: 'dashboard' | 'map' | 'settings' | 'health'
   machine: string // a machine ID, or '' for all machines
   range: number // seconds
   tab: Tab
@@ -35,6 +36,7 @@ export type View = {
   q: string
   peer: string // the destination or caller whose detail page is open, or ''
   dir: Tab // whether peer is somewhere machines contacted, or a caller
+  node: string // what is picked on the network map, or ''
 }
 
 function oneOf<T extends string>(value: string | null, allowed: readonly T[], fallback: T): T {
@@ -47,7 +49,7 @@ export function parseHash(hash: string): View {
   const p = new URLSearchParams(query)
   const show = p.get('show')
   return {
-    page: path === '/settings' ? 'settings' : path === '/health' ? 'health' : 'dashboard',
+    page: path === '/settings' ? 'settings' : path === '/health' ? 'health' : path === '/map' ? 'map' : 'dashboard',
     machine: p.get('machine') ?? '',
     range: (RANGES.find((r) => r.key === p.get('range')) ?? DEFAULT_RANGE).seconds,
     tab: oneOf(p.get('tab'), ['out', 'in'], 'out'),
@@ -56,6 +58,7 @@ export function parseHash(hash: string): View {
     q: p.get('q') ?? '',
     peer: p.get('peer') ?? '',
     dir: oneOf(p.get('dir'), ['out', 'in'], 'out'),
+    node: p.get('node') ?? '',
   }
 }
 
@@ -72,6 +75,7 @@ export function formatHash(v: View): string {
     p.set('peer', v.peer)
     if (v.dir !== 'out') p.set('dir', v.dir)
   }
+  if (v.page === 'map' && v.node) p.set('node', v.node)
   const query = p.toString()
   return `#${v.page === 'dashboard' ? '/' : `/${v.page}`}${query ? `?${query}` : ''}`
 }

@@ -112,6 +112,24 @@ export type Device = {
 
 export type Devices = Map<string, Device>
 
+/** Something on the network map: a machine, the router, or another device. */
+export type MapNode = {
+  id: string // a machine ID, or "dev-" and the hardware address
+  kind: 'host' | 'vm' | 'ct' | 'router' | 'device'
+  name: string // a machine's name; for a device, the owner's name or ''
+  announced: string // what a device calls itself, or ''
+  mac: string
+  ips: string[] // the one to show comes first
+  bridges: string[]
+  firstSeen: number
+  lastSeen: number // 0 if not heard from in the range
+}
+
+/** Traffic between two nodes; "internet" stands for everything outside. */
+export type MapLink = { a: string; b: string; bytes: number }
+
+export type NetworkMap = { nodes: MapNode[]; links: MapLink[] }
+
 /** The name to show for an address: the owner's, else the device's own, else none. */
 export function deviceLabel(devices: Devices, ip: string): string {
   const d = devices.get(ip)
@@ -224,6 +242,7 @@ export const api = {
   split: (range: number, machine: string) => get<Split>('/api/split', { range, machine }),
   health: () => get<Health>('/api/health'),
   devices: () => get<Device[]>('/api/devices'),
+  map: (range: number) => get<NetworkMap>('/api/map', { range }),
   nameDevice: async (ip: string, name: string): Promise<Device[]> =>
     (await send('PUT', '/api/devices', { ip, name })).json() as Promise<Device[]>,
   fresh: (range: number, machine: string, scope: Scope, limit: number) =>

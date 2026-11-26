@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -64,7 +65,7 @@ func parseFile(path, kind string) (model.Machine, bool) {
 	}
 	defer f.Close()
 
-	m := model.Machine{ID: fmt.Sprintf("%s-%d", kind, vmid), Kind: kind, VMID: vmid, MACs: []string{}, IPs: []string{}}
+	m := model.Machine{ID: fmt.Sprintf("%s-%d", kind, vmid), Kind: kind, VMID: vmid, MACs: []string{}, IPs: []string{}, Bridges: []string{}}
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for sc.Scan() {
@@ -83,9 +84,12 @@ func parseFile(path, kind string) (model.Machine, bool) {
 		case key == "template" && val == "1":
 			return model.Machine{}, false
 		case isNetKey(key):
-			mac, ip := parseNet(val)
+			mac, bridge, ip := parseNet(val)
 			if mac != "" {
 				m.MACs = append(m.MACs, mac)
+			}
+			if bridge != "" && !slices.Contains(m.Bridges, bridge) {
+				m.Bridges = append(m.Bridges, bridge)
 			}
 			m.IPs = append(m.IPs, ip...)
 		}
@@ -109,7 +113,7 @@ func isNetKey(key string) bool {
 //
 //	VM:        virtio=BC:24:11:2E:5A:01,bridge=vmbr0,firewall=1
 //	container: name=eth0,bridge=vmbr0,hwaddr=BC:24:11:AA:BB:CC,ip=192.168.1.5/24
-func parseNet(val string) (mac string, ips []string) {
+func parseNet(val string) (mac, bridge string, ips []string) {
 	for _, part := range strings.Split(val, ",") {
 		k, v, ok := strings.Cut(part, "=")
 		if !ok {
@@ -121,7 +125,9 @@ func parseNet(val string) (mac string, ips []string) {
 			if strings.ContainsAny(addr, ".:") { // skips "dhcp", "auto", "manual"
 				ips = append(ips, addr)
 			}
-		case "bridge", "name", "gw", "gw6", "tag", "rate", "mtu", "queues", "firewall", "link_down", "trunks", "type":
+		case "bridge":
+			bridge = v
+		case "name", "gw", "gw6", "tag", "rate", "mtu", "queues", "firewall", "link_down", "trunks", "type":
 		default:
 			// The key is "hwaddr", "macaddr" or the NIC model (virtio, e1000, ...).
 			if m, ok := decode.ParseMAC(v); ok {
@@ -129,5 +135,5 @@ func parseNet(val string) (mac string, ips []string) {
 			}
 		}
 	}
-	return mac, ips
+	return mac, bridge, ips
 }

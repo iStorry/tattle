@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS machines (
 	node    TEXT NOT NULL,
 	macs    TEXT NOT NULL,
 	ips     TEXT NOT NULL,
-	present INTEGER NOT NULL
+	present INTEGER NOT NULL,
+	bridges TEXT NOT NULL DEFAULT '[]'
 );
 CREATE TABLE IF NOT EXISTS settings (
 	key   TEXT PRIMARY KEY,
@@ -74,9 +75,13 @@ func Open(path string) (*Store, error) {
 	// One connection keeps writes serialised and makes the in-memory
 	// database (which is per-connection) behave like a file.
 	db.SetMaxOpenConns(1)
-	if _, err := db.Exec(schema + freshSchema + devicesSchema); err != nil {
+	if _, err := db.Exec(schema + freshSchema + devicesSchema + presenceSchema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("opening database %s: %w", path, err)
+	}
+	if err := addMachineBridges(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("preparing database %s: %w", path, err)
 	}
 	if err := backfillSightings(db); err != nil {
 		db.Close()
@@ -155,6 +160,9 @@ func (s *Store) Prune(before time.Time) error {
 	if _, err := s.db.Exec(`DELETE FROM seen WHERE last_seen < ?`, time.Now().Add(-sightingLife).UnixMilli()); err != nil {
 		return err
 	}
+	if _, err := s.db.Exec(`DELETE FROM presence WHERE last_seen < ?`, before.UnixMilli()); err != nil {
+		return err
+	}
 	return s.pruneDevices(time.Now())
 }
 
@@ -173,11 +181,16 @@ func (s *Store) SaveMachines(machines []model.Machine) error {
 	for _, m := range machines {
 		macs, _ := json.Marshal(m.MACs)
 		ips, _ := json.Marshal(m.IPs)
+		bridges := "[]"
+		if len(m.Bridges) > 0 {
+			b, _ := json.Marshal(m.Bridges)
+			bridges = string(b)
+		}
 		if _, err := tx.Exec(`
-			INSERT INTO machines (id, kind, vmid, name, node, macs, ips, present) VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+			INSERT INTO machines (id, kind, vmid, name, node, macs, ips, present, bridges) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
 			ON CONFLICT (id) DO UPDATE SET kind = excluded.kind, vmid = excluded.vmid, name = excluded.name,
-				node = excluded.node, macs = excluded.macs, ips = excluded.ips, present = 1`,
-			m.ID, m.Kind, m.VMID, m.Name, m.Node, string(macs), string(ips)); err != nil {
+				node = excluded.node, macs = excluded.macs, ips = excluded.ips, present = 1, bridges = excluded.bridges`,
+			m.ID, m.Kind, m.VMID, m.Name, m.Node, string(macs), string(ips), bridges); err != nil {
 			return err
 		}
 	}
@@ -200,7 +213,7 @@ const sparkPoints = 30
 
 // Machines lists every machine with its totals since the given time.
 func (s *Store) Machines(ctx context.Context, since, now time.Time, scope string) ([]MachineStats, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, kind, vmid, name, node, macs, ips, present FROM machines
+	rows, err := s.db.QueryContext(ctx, `SELECT id, kind, vmid, name, node, macs, ips, present, bridges FROM machines
 		ORDER BY CASE kind WHEN 'host' THEN 0 ELSE 1 END, vmid`)
 	if err != nil {
 		return nil, err
@@ -209,11 +222,13 @@ func (s *Store) Machines(ctx context.Context, since, now time.Time, scope string
 	index := map[string]int{}
 	for rows.Next() {
 		var m MachineStats
-		var macs, ips string
-		if err := rows.Scan(&m.ID, &m.Kind, &m.VMID, &m.Name, &m.Node, &macs, &ips, &m.Present); err != nil {
+		var macs, ips, bridges string
+		if err := rows.Scan(&m.ID, &m.Kind, &m.VMID, &m.Name, &m.Node, &macs, &ips, &m.Present, &bridges); err != nil {
 			rows.Close()
 			return nil, err
 		}
+		m.Bridges = []string{}
+		_ = json.Unmarshal([]byte(bridges), &m.Bridges)
 		_ = json.Unmarshal([]byte(macs), &m.MACs)
 		_ = json.Unmarshal([]byte(ips), &m.IPs)
 		m.Spark = make([]int64, sparkPoints)

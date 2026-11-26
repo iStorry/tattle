@@ -221,7 +221,7 @@ export function PeerPage(p: {
 }
 
 /** Lets the owner give an address a name of their own, such as "Laptop". */
-function DeviceName(p: { ip: string; device?: Device; onDevices: (list: Device[]) => void }) {
+export function DeviceName(p: { ip: string; device?: Device; onDevices: (list: Device[]) => void }) {
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)

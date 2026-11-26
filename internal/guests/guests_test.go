@@ -46,7 +46,8 @@ net0: name=eth0,bridge=vmbr0,gw=192.168.1.1,hwaddr=BC:24:11:AA:BB:CC,ip=192.168.
 	}
 	vm, ct, other := got[0], got[1], got[2]
 	if vm.ID != "vm-100" || vm.Kind != "vm" || vm.Name != "home-assistant" || vm.Node != "pve" ||
-		!reflect.DeepEqual(vm.MACs, []string{"bc:24:11:2e:5a:01", "bc:24:11:2e:5a:02"}) || len(vm.IPs) != 0 {
+		!reflect.DeepEqual(vm.MACs, []string{"bc:24:11:2e:5a:01", "bc:24:11:2e:5a:02"}) || len(vm.IPs) != 0 ||
+		!reflect.DeepEqual(vm.Bridges, []string{"vmbr0", "vmbr1"}) {
 		t.Errorf("vm = %+v", vm)
 	}
 	if ct.ID != "ct-200" || ct.Name != "pihole" || !reflect.DeepEqual(ct.MACs, []string{"bc:24:11:aa:bb:cc"}) ||

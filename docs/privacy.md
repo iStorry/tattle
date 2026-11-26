@@ -31,6 +31,12 @@ It also keeps:
   than the traffic history.
 - **Names devices announce** for themselves on the network (mDNS and DHCP),
   and names you give them.
+- **Which devices are on the network,** for the map: each device's hardware
+  address, its addresses, the bridge it was heard on, and the first and
+  last time it was heard. This includes devices that never talk to a VM, a
+  container or the host. Tattle learns it from the announcements every
+  device makes to find others (ARP and IPv6 neighbour discovery), without
+  sending anything. It is kept as long as the traffic history.
 - **Your settings,** a salted hash of the dashboard password, and hashes of
   the tokens for browsers that are signed in.
 
@@ -42,7 +48,7 @@ It also keeps:
   `example.com/some/page`.
 - Anything from inside a guest. Tattle only sees what crosses the bridge.
 - Traffic between two devices on your network that involves no VM, container
-  or the host.
+  or the host. Tattle knows such devices are there, not what they do.
 
 To read names, Tattle looks at three things that travel unencrypted: DNS
 answers, the server name at the start of an HTTPS or HTTP/3 connection, and

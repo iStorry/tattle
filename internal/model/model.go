@@ -14,6 +14,17 @@ type Machine struct {
 	Node string   `json:"node"`
 	MACs []string `json:"macs"`
 	IPs  []string `json:"ips"`
+	// Bridges are the bridges its network cards are attached to.
+	Bridges []string `json:"bridges"`
+}
+
+// Sighting is a device that is not a machine, heard saying on a bridge that
+// an address is its own.
+type Sighting struct {
+	MAC   string
+	IP    string
+	Iface string // the bridge it was heard on
+	Seen  int64  // unix milliseconds
 }
 
 // FlowDelta is traffic seen since the last flush for one
