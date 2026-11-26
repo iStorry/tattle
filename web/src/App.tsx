@@ -15,12 +15,13 @@ import {
   type Timeline,
 } from './api'
 import { Spark, TrafficChart } from './Chart'
-import { ago, bytes, count, KIND_LABEL, plural, service, YOURS_LABEL } from './format'
+import { ago, bytes, count, KIND_LABEL, plural, service, times, YOURS_LABEL } from './format'
 import { PeerPage } from './Detail'
 import { HealthPage, StateBadge } from './Health'
 import { WhatsNew } from './News'
 import { Amounts, Empty, Logo, ScopeTag, Tile } from './parts'
 import { SettingsPage } from './Settings'
+import { usePolling } from './poll'
 import { formatHash, RANGES, useView, type Sort, type Tab, type View } from './url'
 
 const DAY = 24 * 60 * 60
@@ -103,11 +104,14 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
     }
   }, [])
 
-  useEffect(() => {
-    if (scope === null) return
-    let current = true
-    const load = async () => {
-      if (document.hidden) return
+  // Which question the figures on screen answer. Until it matches what is
+  // being asked for, they belong to the previous range or machine.
+  const asking = `${range}|${machine}|${scope}`
+  const [answered, setAnswered] = useState('')
+
+  usePolling(
+    async (wanted) => {
+      if (scope === null) return
       try {
         const [st, machines, timeline, peers, split, fresh, devices] = await Promise.all([
           api.status(),
@@ -118,24 +122,21 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
           api.fresh(range, machine, scope, newLimit),
           api.devices(),
         ])
-        if (!current) return
+        if (!wanted()) return
         setStatus(st)
         setNow(st.now)
         setData({ machines, timeline, peers, split, fresh, devices: byAddress(devices) })
+        setAnswered(asking)
         setFailed(false)
       } catch {
-        if (current) setFailed(true)
+        if (wanted()) setFailed(true)
       }
-    }
-    load()
-    const id = setInterval(load, 3000)
-    document.addEventListener('visibilitychange', load)
-    return () => {
-      current = false
-      clearInterval(id)
-      document.removeEventListener('visibilitychange', load)
-    }
-  }, [range, machine, scope, info, newLimit])
+    },
+    [range, machine, scope, info, newLimit],
+    // Health and Settings keep themselves up to date; the dashboard's
+    // figures are only refreshed while they are on screen.
+    route === 'dashboard',
+  )
 
   const names = useMemo(() => new Map(data?.machines.map((m) => [m.id, m]) ?? []), [data])
   const selected = machine ? names.get(machine) : undefined
@@ -185,6 +186,7 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
   const received = data.timeline.points.reduce((a, p) => a + p.received, 0)
   const activeMachines = data.machines.filter((m) => m.lastSeen > 0).length
   const rangeLabel = RANGES.find((r) => r.seconds === range)?.phrase ?? ''
+  const stale = answered !== asking
 
   return (
     <div className="app">
@@ -263,7 +265,7 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
           {data.machines.map((m) => (
             <a key={m.id} className="machine" aria-current={machine === m.id} href={formatHash({ ...view, machine: m.id })}>
               <span className="machine-name">
-                {m.name}
+                <span className="machine-label">{m.name}</span>
                 <span className="kind">{KIND_LABEL[m.kind]}</span>
               </span>
               <span className="machine-meta">
@@ -283,9 +285,16 @@ export default function App({ canSignOut, onSignOut }: { canSignOut: boolean; on
             now={now}
           />
         ) : (
-        <main>
+        <main className={stale ? 'stale' : undefined} aria-busy={stale}>
           <div className="heading">
-            <h1>{selected ? selected.name : 'All machines'}</h1>
+            <h1>
+              {selected ? selected.name : 'All machines'}
+              {stale && (
+                <span className="loading" role="status">
+                  Loading the last {rangeLabel}…
+                </span>
+              )}
+            </h1>
             <p>
               {selected
                 ? [
@@ -420,7 +429,8 @@ function SplitBar(p: { split: Split; info: SettingsInfo; settingsHref: string; s
     <div className="split">
       <div className="split-bar" role="img" aria-label={`${pct(internet)}% internet, ${pct(local)}% inside your network`}>
         {sides.map(
-          (s) => s.share.bytes > 0 && <i key={s.key} className={s.hidden ? `${s.key} off` : s.key} style={{ flexGrow: s.share.bytes }} />,
+          // A hidden side too small to see would only be a stray stub.
+          (s) => s.share.bytes > 0 && !(s.hidden && pct(s.share) === 0) && <i key={s.key} className={s.hidden ? `${s.key} off` : s.key} style={{ flexGrow: s.share.bytes }} />,
         )}
       </div>
       <div className="split-legend">
@@ -579,7 +589,7 @@ function GroupRow(p: ListProps & { peers: Peer[] }) {
         <div className="row-side">
           <Amounts sent={sum((x) => x.sent)} received={sum((x) => x.received)} />
           <span className="when">
-            {plural(sum((x) => x.conns), 'time')} · {ago(Math.max(...p.peers.map((x) => x.lastSeen)), p.now)}
+            {times(sum((x) => x.conns))} · {ago(Math.max(...p.peers.map((x) => x.lastSeen)), p.now)}
           </span>
         </div>
       </div>
@@ -627,7 +637,7 @@ function PeerRow(p: ListProps & { peer: Peer }) {
       <div className="row-side">
         <Amounts sent={peer.sent} received={peer.received} />
         <span className="when">
-          {plural(peer.conns, 'time')} · {ago(peer.lastSeen, p.now)}
+          {times(peer.conns)} · {ago(peer.lastSeen, p.now)}
         </span>
       </div>
     </li>

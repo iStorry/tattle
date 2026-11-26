@@ -267,9 +267,33 @@ main {
 .machine-name {
   grid-column: 1;
   font-weight: 550;
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+}
+
+/* A long name is shortened; the badge after it stays whole. */
+.machine-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.machine-name .kind {
+  flex: none;
+}
+
+/* Figures that still belong to the previous range or machine. */
+main.stale > section {
+  opacity: 0.45;
+  transition: opacity 0.15s 0.2s;
+}
+
+.heading .loading {
+  margin-left: 12px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-3);
 }
 
 .machine-meta {
