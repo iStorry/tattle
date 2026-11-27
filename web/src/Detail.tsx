@@ -41,7 +41,7 @@ export function PeerPage(p: {
   const fresh = detail && detail.name === peer && detail.direction === dir ? detail : null
   if (!fresh) {
     return (
-      <main>
+      <main className="page detail">
         <div className="heading">
           {back}
           <h1>{peer}</h1>
@@ -65,7 +65,7 @@ export function PeerPage(p: {
   const quiet = fresh.conns === 0 && fresh.sent + fresh.received === 0
 
   return (
-    <main>
+    <main className="page detail">
       <div className="heading">
         {back}
         <h1>

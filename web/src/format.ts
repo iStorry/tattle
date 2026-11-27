@@ -1,3 +1,5 @@
+import type { Timeline } from './api'
+
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB']
 
 export function bytes(n: number): string {
@@ -118,3 +120,11 @@ export const KIND_LABEL = { vm: 'VM', ct: 'Container', host: 'Host' } as const
 
 /** The tag on a destination that is one of the owner's own machines. */
 export const YOURS_LABEL = { vm: 'Your VM', ct: 'Your container', host: 'Your host' } as const
+
+/** Everything sent and received across a timeline. */
+export function totals(t: Timeline) {
+  return {
+    sent: t.points.reduce((a, p) => a + p.sent, 0),
+    received: t.points.reduce((a, p) => a + p.received, 0),
+  }
+}

@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { api, type MapNode, type NetworkMap } from './api'
 import { DeviceName } from './Detail'
+import { Icon as Glyph } from './icons'
 import { ago, bytes, KIND_LABEL, plural } from './format'
 import { Empty, Tile } from './parts'
 import { formatHash, type View } from './url'
@@ -18,50 +19,7 @@ function label(n: MapNode): string {
 }
 
 function Icon({ kind }: { kind: MapNode['kind'] | typeof INTERNET }) {
-  const shape: Record<string, ReactNode> = {
-    internet: (
-      <>
-        <circle cx="12" cy="12" r="8.5" />
-        <path d="M3.5 12h17M12 3.5c3 3.2 3 13.8 0 17M12 3.5c-3 3.2-3 13.8 0 17" />
-      </>
-    ),
-    router: (
-      <>
-        <rect x="3.5" y="13" width="17" height="6.5" rx="2" />
-        <path d="M7.5 16.3h.01M11 16.3h.01M8 13V8.5M16 13V5.5" />
-      </>
-    ),
-    host: (
-      <>
-        <rect x="4" y="4" width="16" height="6.5" rx="1.8" />
-        <rect x="4" y="13.5" width="16" height="6.5" rx="1.8" />
-        <path d="M7.5 7.3h.01M7.5 16.8h.01" />
-      </>
-    ),
-    vm: (
-      <>
-        <rect x="3.5" y="4.5" width="17" height="11.5" rx="2" />
-        <path d="M9 20h6M12 16v4" />
-      </>
-    ),
-    ct: (
-      <>
-        <path d="M12 3.5 20 8v8l-8 4.5L4 16V8z" />
-        <path d="M4 8l8 4.5L20 8M12 12.5v8" />
-      </>
-    ),
-    device: (
-      <>
-        <rect x="7" y="3.5" width="10" height="17" rx="2.2" />
-        <path d="M11 17.5h2" />
-      </>
-    ),
-  }
-  return (
-    <svg className="map-icon" viewBox="0 0 24 24" aria-hidden="true">
-      {shape[kind]}
-    </svg>
-  )
+  return <Glyph name={kind} className="map-icon" />
 }
 
 /** Everything connected to the network, drawn the way it is wired together. */
@@ -107,7 +65,7 @@ export function MapPage(p: { view: View; now: number; rangePhrase: string; onPic
 
   if (!map) {
     return (
-      <main className="netmap">
+      <main className="page netmap">
         <Empty>{failed ? 'The map could not be loaded.' : 'Loading…'}</Empty>
       </main>
     )
@@ -169,7 +127,7 @@ export function MapPage(p: { view: View; now: number; rangePhrase: string; onPic
   const since = p.now - range * 1000
 
   return (
-    <main className="netmap">
+    <main className="page netmap">
       <div className="heading">
         <h1>Network map</h1>
         <p>

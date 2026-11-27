@@ -6,6 +6,7 @@ import type { Scope } from './api'
 //   #/?machine=vm-100&range=24h&tab=in&show=internet&sort=data&q=docker
 //   #/?peer=api.github.com&range=24h
 //   #/map?range=24h&node=vm-100
+//   #/machines?range=24h&machine=vm-100
 //   #/settings
 //   #/health
 //
@@ -27,7 +28,7 @@ export const RANGES = [
 const DEFAULT_RANGE = RANGES[1]
 
 export type View = {
-  page: 'dashboard' | 'map' | 'settings' | 'health'
+  page: 'dashboard' | 'map' | 'machines' | 'settings' | 'health'
   machine: string // a machine ID, or '' for all machines
   range: number // seconds
   tab: Tab
@@ -49,7 +50,16 @@ export function parseHash(hash: string): View {
   const p = new URLSearchParams(query)
   const show = p.get('show')
   return {
-    page: path === '/settings' ? 'settings' : path === '/health' ? 'health' : path === '/map' ? 'map' : 'dashboard',
+    page:
+      path === '/settings'
+        ? 'settings'
+        : path === '/health'
+          ? 'health'
+          : path === '/map'
+            ? 'map'
+            : path === '/machines'
+              ? 'machines'
+              : 'dashboard',
     machine: p.get('machine') ?? '',
     range: (RANGES.find((r) => r.key === p.get('range')) ?? DEFAULT_RANGE).seconds,
     tab: oneOf(p.get('tab'), ['out', 'in'], 'out'),
