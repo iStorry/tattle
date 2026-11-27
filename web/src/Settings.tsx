@@ -61,7 +61,7 @@ export function SettingsPage(p: {
   }
 
   return (
-    <div className="settings">
+    <div className="page settings">
       <div className="heading">
         <a href={p.backHref}>← Back to the dashboard</a>
         <h1>Settings</h1>

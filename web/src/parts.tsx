@@ -16,11 +16,17 @@ export function Logo() {
   )
 }
 
-export function Tile({ label, value, hint }: { label: string; value: string; hint?: string }) {
+/** A figure with its name, and optionally a line underneath that puts it in context. */
+export function Tile(p: { label: string; value: string; hint?: string; note?: string; tone?: 'good' | 'warn' }) {
   return (
-    <div className="tile" title={hint}>
-      <span>{label}</span>
-      <strong>{value}</strong>
+    <div className="tile" title={p.hint}>
+      <span className="tile-label">{p.label}</span>
+      <strong>{p.value}</strong>
+      {p.note && (
+        <span className="tile-note" data-tone={p.tone}>
+          {p.note}
+        </span>
+      )}
     </div>
   )
 }

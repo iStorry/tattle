@@ -136,6 +136,13 @@ export function deviceLabel(devices: Devices, ip: string): string {
   return d ? d.name || d.announced : ''
 }
 
+/** What to call a peer: one of your machines by its name, a named device by that name, else as it was seen. */
+export function peerLabel(p: Peer, machines: Map<string, Machine>, devices: Devices): string {
+  const other = machines.get(p.peerId)
+  if (other) return other.name
+  return (p.name === p.ip && deviceLabel(devices, p.ip)) || p.name
+}
+
 /** Whether a destination is known only by its address, not by a domain name. */
 export function isAddress(name: string): boolean {
   return name.includes(':') || /^\d{1,3}(\.\d{1,3}){3}$/.test(name)

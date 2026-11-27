@@ -1,5 +1,6 @@
 import { deviceLabel, type Devices, type Fresh, type Machine } from './api'
 import { ago, plural, service } from './format'
+import { Icon } from './icons'
 import { ScopeTag } from './parts'
 import { formatHash, type View } from './url'
 
@@ -13,13 +14,19 @@ export function WhatsNew(p: {
   rangePhrase: string
   expanded: boolean
   onExpand: (expanded: boolean) => void
+  className?: string
 }) {
   const { fresh, names, now, view } = p
   const machineLink = (id: string) => <a href={formatHash({ ...view, machine: id })}>{names.get(id)?.name ?? id}</a>
 
   return (
-    <section className="card news">
-      <h2>New in the last {p.rangePhrase}</h2>
+    <section className={`card news ${p.className ?? ''}`}>
+      <div className="card-head">
+        <h2>
+          New in the last {p.rangePhrase}
+          {fresh.firsts.length > 0 && <span className="count-pill">{fresh.firsts.length + fresh.more}</span>}
+        </h2>
+      </div>
       {fresh.firsts.length === 0 ? (
         <p className="quiet">Nothing new. Every place contacted, and every caller, has been seen before.</p>
       ) : (
@@ -34,6 +41,9 @@ export function WhatsNew(p: {
             )
             return (
               <li key={[f.machine, f.direction, f.name].join('|')}>
+                <span className="news-icon" data-dir={f.direction} data-local={f.local || undefined}>
+                  <Icon name={incoming ? 'in' : 'out'} />
+                </span>
                 <div className="row-main">
                   <span className="row-title">
                     {incoming ? (

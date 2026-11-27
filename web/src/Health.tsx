@@ -49,7 +49,7 @@ export function HealthPage({ backHref }: { backHref: string }) {
   const troubled = health?.checks.filter((c) => c.state === 'warn' || c.state === 'bad') ?? []
 
   return (
-    <div className="settings health">
+    <div className="page settings health">
       <div className="heading">
         <a href={backHref}>← Back to the dashboard</a>
         <h1>Health</h1>
